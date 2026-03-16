@@ -32,6 +32,9 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Build embedded frontend assets
+        run: ./tools/sync_webui_dist.sh
+
       - name: Run Go tests
         run: go test ./...
 
