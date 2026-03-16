@@ -29,6 +29,9 @@
     "loadingModel": "Loading model",
     "delete": "Delete",
     "download": "Download",
+    "downloading": "Downloading",
+    "cancelDownload": "Cancel download",
+    "cancelingDownload": "Canceling...",
     "clearHistory": "Clear history",
     "clearingHistory": "Clearing history",
     "useNow": "Use now",
@@ -75,6 +78,8 @@
     "recommended": "Recommended",
     "sourceInstalled": "Installed",
     "sourceRemote": "Remote",
+    "downloadProgress": "Downloading model",
+    "downloadProgressAria": "Model download progress",
     "state": {
       "downloadRequired": {
         "label": "Download required",

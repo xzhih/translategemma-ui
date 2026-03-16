@@ -52,10 +52,11 @@ type manifestModel struct {
 }
 
 type DownloadProgress struct {
-	Downloaded int64
-	Total      int64
-	Percent    float64
-	Message    string
+	Downloaded       int64
+	Total            int64
+	Percent          float64
+	SpeedBytesPerSec float64
+	Message          string
 }
 
 var (
@@ -105,7 +106,7 @@ func DownloadModelWithContext(ctx context.Context, dataRoot string, item models.
 	if existingPath != "" {
 		st, statErr := os.Stat(existingPath)
 		if statErr == nil && st.Mode().IsRegular() {
-			reportDownload(onProgress, st.Size(), item.SizeBytes, "Artifact already exists locally")
+			reportDownload(onProgress, st.Size(), item.SizeBytes, 0, "Artifact already exists locally")
 			return existingPath, nil
 		}
 	}
@@ -408,7 +409,7 @@ func copyLocalArtifact(ctx context.Context, srcPath, dstPath string, sizeBytes i
 	if st, err := in.Stat(); err == nil && sizeBytes <= 0 {
 		sizeBytes = st.Size()
 	}
-	reportDownload(onProgress, 0, sizeBytes, "Copying local runtime artifact")
+	reportDownload(onProgress, 0, sizeBytes, 0, "Copying local runtime artifact")
 	return writeDownloadedArtifact(ctx, in, dstPath, sizeBytes, sizeBytes, onProgress)
 }
 
@@ -428,7 +429,8 @@ func writeDownloadedArtifact(ctx context.Context, src io.Reader, dstPath string,
 
 	buf := make([]byte, 1024*1024)
 	var downloaded int64
-	reportDownload(onProgress, 0, total, "Downloading artifact")
+	startedAt := time.Now()
+	reportDownload(onProgress, 0, total, 0, "Downloading artifact")
 	for {
 		if err := ctx.Err(); err != nil {
 			_ = out.Close()
@@ -439,7 +441,7 @@ func writeDownloadedArtifact(ctx context.Context, src io.Reader, dstPath string,
 		if n > 0 {
 			wn, writeErr := out.Write(buf[:n])
 			downloaded += int64(wn)
-			reportDownload(onProgress, downloaded, total, "Downloading artifact")
+			reportDownload(onProgress, downloaded, total, downloadSpeed(startedAt, downloaded), "Downloading artifact")
 			if writeErr != nil {
 				_ = out.Close()
 				_ = os.Remove(tmpPath)
@@ -482,7 +484,7 @@ func writeDownloadedArtifact(ctx context.Context, src io.Reader, dstPath string,
 		return "", err
 	}
 	finalSize := totalOr(sizeBytes, downloaded)
-	reportDownload(onProgress, finalSize, finalSize, "Download completed")
+	reportDownload(onProgress, finalSize, finalSize, downloadSpeed(startedAt, finalSize), "Download completed")
 	return dstPath, nil
 }
 
@@ -509,7 +511,7 @@ func applyAuth(req *http.Request) {
 	}
 }
 
-func reportDownload(cb func(DownloadProgress), downloaded, total int64, msg string) {
+func reportDownload(cb func(DownloadProgress), downloaded, total int64, speedBytesPerSec float64, msg string) {
 	if cb == nil {
 		return
 	}
@@ -521,11 +523,23 @@ func reportDownload(cb func(DownloadProgress), downloaded, total int64, msg stri
 		}
 	}
 	cb(DownloadProgress{
-		Downloaded: downloaded,
-		Total:      total,
-		Percent:    percent,
-		Message:    msg,
+		Downloaded:       downloaded,
+		Total:            total,
+		Percent:          percent,
+		SpeedBytesPerSec: speedBytesPerSec,
+		Message:          msg,
 	})
+}
+
+func downloadSpeed(startedAt time.Time, downloaded int64) float64 {
+	if downloaded <= 0 || startedAt.IsZero() {
+		return 0
+	}
+	elapsed := time.Since(startedAt).Seconds()
+	if elapsed <= 0 {
+		return 0
+	}
+	return float64(downloaded) / elapsed
 }
 
 func totalOr(v, fallback int64) int64 {

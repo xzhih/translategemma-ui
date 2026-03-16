@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"path/filepath"
@@ -64,10 +65,21 @@ func (s *Server) handleModelInstall(w http.ResponseWriter, r *http.Request) {
 	defer s.installMu.Unlock()
 
 	_ = writeEvent(streamEvent{Type: "status", Stage: "check", Message: "Preparing model install", MessageCode: statusCodePreparingModelInstall, Percent: 0})
-	modelPath, err := huggingface.DownloadModel(s.dataRoot, item, func(p huggingface.DownloadProgress) {
-		_ = writeEvent(streamEvent{Type: "progress", Stage: "download", Message: p.Message, Percent: p.Percent})
+	modelPath, err := huggingface.DownloadModelWithContext(r.Context(), s.dataRoot, item, func(p huggingface.DownloadProgress) {
+		_ = writeEvent(streamEvent{
+			Type:                "progress",
+			Stage:               "download",
+			Message:             p.Message,
+			Percent:             p.Percent,
+			DownloadedBytes:     p.Downloaded,
+			TotalBytes:          p.Total,
+			SpeedBytesPerSecond: p.SpeedBytesPerSec,
+		})
 	})
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return
+		}
 		s.setStatus(err.Error())
 		_ = writeEvent(streamEvent{Type: "error", Stage: "download", Message: err.Error()})
 		return
@@ -210,10 +222,21 @@ func (s *Server) handleEnableVision(w http.ResponseWriter, r *http.Request) {
 
 	if s.localModelPath(visionModel.FileName) == "" {
 		_ = writeEvent(streamEvent{Type: "status", Stage: "download", Message: "Downloading q8_0_vision runtime", MessageCode: statusCodeDownloadingVisionRuntime, Percent: 0})
-		modelPath, err := huggingface.DownloadModel(s.dataRoot, visionModel, func(p huggingface.DownloadProgress) {
-			_ = writeEvent(streamEvent{Type: "progress", Stage: "download", Message: p.Message, Percent: p.Percent})
+		modelPath, err := huggingface.DownloadModelWithContext(r.Context(), s.dataRoot, visionModel, func(p huggingface.DownloadProgress) {
+			_ = writeEvent(streamEvent{
+				Type:                "progress",
+				Stage:               "download",
+				Message:             p.Message,
+				Percent:             p.Percent,
+				DownloadedBytes:     p.Downloaded,
+				TotalBytes:          p.Total,
+				SpeedBytesPerSecond: p.SpeedBytesPerSec,
+			})
 		})
 		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return
+			}
 			s.setStatus(err.Error())
 			_ = writeEvent(streamEvent{Type: "error", Stage: "download", Message: err.Error()})
 			return

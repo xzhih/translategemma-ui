@@ -117,6 +117,9 @@ interface StreamEvent {
   message?: string;
   messageCode?: string;
   percent?: number;
+  downloadedBytes?: number;
+  totalBytes?: number;
+  speedBytesPerSecond?: number;
   delta?: string;
   output?: string;
   history?: HistoryEntry;
@@ -144,6 +147,63 @@ interface StatusState {
   code?: string;
   fallback?: string;
   isError: boolean;
+}
+
+interface ModelDownloadState {
+  modelId: string;
+  modelName: string;
+  message: string;
+  percent: number;
+  downloadedBytes: number;
+  totalBytes: number;
+  speedBytesPerSecond: number;
+  canceling: boolean;
+}
+
+class StreamEventError extends Error {
+  code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "StreamEventError";
+    this.code = code;
+  }
+}
+
+function clampPercent(value: number | undefined) {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, value));
+}
+
+function formatBinarySize(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "--";
+  }
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  const digits = value >= 100 || unitIndex === 0 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(digits)} ${units[unitIndex]}`;
+}
+
+function formatTransferRate(bytesPerSecond: number) {
+  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) {
+    return "-- /s";
+  }
+  return `${formatBinarySize(bytesPerSecond)}/s`;
+}
+
+function isAbortError(error: unknown) {
+  return (
+    (error instanceof DOMException && error.name === "AbortError") ||
+    (error instanceof Error && error.name === "AbortError")
+  );
 }
 
 function localizeClientErrorMessage(
@@ -792,6 +852,54 @@ function ImageScreen({
   );
 }
 
+function DownloadProgressCard({
+  download,
+  onCancel,
+  compact = false,
+}: {
+  download: ModelDownloadState;
+  onCancel: () => void;
+  compact?: boolean;
+}) {
+  const { t } = useTranslation();
+  const progressPercent = clampPercent(download.percent);
+  const totalLabel = download.totalBytes > 0 ? formatBinarySize(download.totalBytes) : "--";
+
+  return (
+    <div
+      className={`download-card ${compact ? "download-card--compact" : ""}`.trim()}
+      role="status"
+      aria-live="polite"
+      aria-label={t("model.downloadProgressAria", { defaultValue: "Model download progress" })}
+    >
+      <div className="download-card__header">
+        <div className="download-card__copy">
+          <span className="download-card__eyebrow">
+            {t("model.downloadProgress", { defaultValue: "Downloading model" })}
+          </span>
+          <strong className="download-card__title">{download.modelName}</strong>
+        </div>
+        <Button variant="danger" onClick={onCancel} disabled={download.canceling}>
+          {download.canceling
+            ? t("buttons.cancelingDownload", { defaultValue: "Canceling..." })
+            : t("buttons.cancelDownload", { defaultValue: "Cancel download" })}
+        </Button>
+      </div>
+      <div className="download-card__track" aria-hidden="true">
+        <span className="download-card__bar" style={{ width: `${progressPercent}%` }} />
+      </div>
+      <div className="download-card__meta">
+        <span>{progressPercent.toFixed(progressPercent >= 10 ? 0 : 1)}%</span>
+        <span>
+          {formatBinarySize(download.downloadedBytes)} / {totalLabel}
+        </span>
+        <span>{formatTransferRate(download.speedBytesPerSecond)}</span>
+      </div>
+      <p className="download-card__message">{download.message}</p>
+    </div>
+  );
+}
+
 function ModelDrawer({
   open,
   models,
@@ -799,7 +907,9 @@ function ModelDrawer({
   onUseNow,
   onDelete,
   onDownload,
+  onCancelDownload,
   busyModelId,
+  downloadState,
 }: {
   open: boolean;
   models: ModelItem[];
@@ -807,7 +917,9 @@ function ModelDrawer({
   onUseNow: (id: string) => void;
   onDelete: (id: string) => void;
   onDownload: (id: string) => void;
+  onCancelDownload: () => void;
   busyModelId: string | null;
+  downloadState: ModelDownloadState | null;
 }) {
   const { t } = useTranslation();
   if (!open) {
@@ -827,10 +939,14 @@ function ModelDrawer({
         <ScrollView ariaLabel={t("model.listAria")}>
           {models.map((model) => {
             const busy = busyModelId === model.id;
+            const activeDownload = downloadState?.modelId === model.id ? downloadState : null;
+            const showDownloadProgress = !!activeDownload;
             const modelState = describeModelState(model, false);
             const actionVariant = model.active ? "success" : model.selected ? "secondary" : "primary";
             const actionLabel = busy
-              ? t("buttons.loadingModel")
+              ? showDownloadProgress
+                ? t("buttons.downloading", { defaultValue: "Downloading" })
+                : t("buttons.loadingModel")
               : model.active
                 ? t("buttons.active")
                 : model.selected
@@ -872,6 +988,8 @@ function ModelDrawer({
                       <span>{t("buttons.delete")}</span>
                     </Button>
                   </div>
+                ) : activeDownload ? (
+                  <DownloadProgressCard download={activeDownload} onCancel={onCancelDownload} compact />
                 ) : (
                   <Button
                     variant="primary"
@@ -1063,10 +1181,12 @@ async function streamJsonLines(
   url: string,
   body: URLSearchParams | undefined,
   onEvent: (event: StreamEvent) => void,
+  signal?: AbortSignal,
 ) {
   const response = await fetch(url, {
     method: "POST",
     body,
+    signal,
   });
   if (!response.ok || !response.body) {
     throw new Error((await response.text()) || "request failed");
@@ -1102,6 +1222,7 @@ async function streamJsonLines(
 function App() {
   const { t, i18n } = useTranslation();
   const uploadRef = useRef<HTMLInputElement | null>(null);
+  const modelActionAbortRef = useRef<AbortController | null>(null);
   const [screenMode, setScreenMode] = useState<ScreenMode>("text");
   const [drawer, setDrawer] = useState<DrawerKind>(null);
   const [models, setModels] = useState<ModelItem[]>([]);
@@ -1127,6 +1248,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [busyModelId, setBusyModelId] = useState<string | null>(null);
   const [pendingModelAction, setPendingModelAction] = useState<string | null>(null);
+  const [downloadState, setDownloadState] = useState<ModelDownloadState | null>(null);
   const [busyText, setBusyText] = useState(false);
   const [busyImage, setBusyImage] = useState(false);
   const [imageDragActive, setImageDragActive] = useState(false);
@@ -1243,6 +1365,10 @@ function App() {
   const visionSwitchBusy = pendingModelAction === "/api/models/enable-vision";
   const currentLocale = normalizeAppLocale(i18n.resolvedLanguage) ?? "en";
 
+  useEffect(() => () => {
+    modelActionAbortRef.current?.abort();
+  }, []);
+
   useEffect(() => {
     document.title = t("app.title");
   }, [i18n.resolvedLanguage, t]);
@@ -1276,6 +1402,54 @@ function App() {
         loaded: item.selected,
       })),
     );
+  }
+
+  function findModelForAction(url: string, modelId?: string) {
+    const resolvedModelId = modelId ?? (url === "/api/models/enable-vision" ? "q8_0_vision" : "");
+    if (!resolvedModelId) {
+      return null;
+    }
+    return models.find((item) => item.id === resolvedModelId) ?? null;
+  }
+
+  function startDownloadTracking(url: string, modelId?: string) {
+    const model = findModelForAction(url, modelId);
+    if (!model) {
+      return;
+    }
+    setDownloadState({
+      modelId: model.id,
+      modelName: model.fileName,
+      message:
+        url === "/api/models/enable-vision"
+          ? t("serverStatus.downloading_vision_runtime")
+          : t("serverStatus.preparing_model_install"),
+      percent: 0,
+      downloadedBytes: 0,
+      totalBytes: 0,
+      speedBytesPerSecond: 0,
+      canceling: false,
+    });
+  }
+
+  function updateDownloadTracking(url: string, modelId: string | undefined, event: StreamEvent) {
+    if (event.stage !== "download") {
+      return;
+    }
+    const model = findModelForAction(url, modelId);
+    if (!model) {
+      return;
+    }
+    setDownloadState((current) => ({
+      modelId: model.id,
+      modelName: model.fileName,
+      message: event.message ?? current?.message ?? "",
+      percent: clampPercent(event.percent ?? current?.percent ?? 0),
+      downloadedBytes: event.downloadedBytes ?? current?.downloadedBytes ?? 0,
+      totalBytes: event.totalBytes ?? current?.totalBytes ?? 0,
+      speedBytesPerSecond: event.speedBytesPerSecond ?? current?.speedBytesPerSecond ?? 0,
+      canceling: current?.canceling ?? false,
+    }));
   }
 
   async function handleCopy(value: string) {
@@ -1423,6 +1597,9 @@ function App() {
     if (busyModelId) {
       return;
     }
+    const isDownloadAction = url === "/api/models/install" || url === "/api/models/enable-vision";
+    const abortController = isDownloadAction ? new AbortController() : null;
+    modelActionAbortRef.current = abortController;
     if (url === "/api/models/activate" && modelId) {
       setModels((current) =>
         current.map((item) => ({
@@ -1444,6 +1621,9 @@ function App() {
         })),
       );
     }
+    if (isDownloadAction) {
+      startDownloadTracking(url, modelId);
+    }
     setBusyModelId(modelId || "__global__");
     setPendingModelAction(url);
     try {
@@ -1452,17 +1632,39 @@ function App() {
         modelId ? new URLSearchParams({ model_id: modelId }) : undefined,
         (event) => {
           if (event.type === "error") {
-            throw new Error(event.message || t("errors.modelActionFailed"));
+            throw new StreamEventError(event.message || t("errors.modelActionFailed"), event.messageCode);
+          }
+          if (isDownloadAction) {
+            updateDownloadTracking(url, modelId, event);
+            if (event.stage && event.stage !== "download") {
+              setDownloadState(null);
+            }
+          }
+          if (event.type === "done") {
+            setDownloadState(null);
           }
         },
+        abortController?.signal,
       );
       await refreshState(true);
       if (url === "/api/models/enable-vision") {
         setScreenMode("image");
       }
     } catch (error) {
+      setDownloadState(null);
+      await refreshState(true).catch(() => undefined);
+      if (isAbortError(error)) {
+        return;
+      }
+      if (error instanceof StreamEventError && error.code) {
+        applyServerStatus(error.code, error.message, true);
+        return;
+      }
       applyClientError(error instanceof Error ? error.message : "model action failed");
     } finally {
+      if (modelActionAbortRef.current === abortController) {
+        modelActionAbortRef.current = null;
+      }
       setPendingModelAction(null);
       setBusyModelId(null);
     }
@@ -1517,6 +1719,14 @@ function App() {
     }
   }
 
+  function handleCancelDownload() {
+    if (!downloadState || !modelActionAbortRef.current) {
+      return;
+    }
+    setDownloadState((current) => (current ? { ...current, canceling: true } : current));
+    modelActionAbortRef.current.abort();
+  }
+
   if (loading) {
     return (
       <div className="app-shell">
@@ -1547,6 +1757,11 @@ function App() {
       </header>
 
       {showStatusBanner ? <div className="status-banner">{statusMessage}</div> : null}
+      {downloadState && drawer !== "model" ? (
+        <div className="download-banner">
+          <DownloadProgressCard download={downloadState} onCancel={handleCancelDownload} />
+        </div>
+      ) : null}
 
       <main className="page-main">
         {screenMode === "text" ? (
@@ -1639,7 +1854,9 @@ function App() {
         onUseNow={(id) => void runModelAction("/api/models/activate", id)}
         onDelete={(id) => void runModelAction("/api/models/delete", id)}
         onDownload={(id) => void runModelAction("/api/models/install", id)}
+        onCancelDownload={handleCancelDownload}
         busyModelId={busyModelId}
+        downloadState={downloadState}
       />
 
       <HistoryDrawer

@@ -161,6 +161,35 @@ function streamResponse(events: Array<Record<string, unknown>>) {
   );
 }
 
+function streamingDownloadResponse(
+  signal: AbortSignal | undefined,
+  events: Array<Record<string, unknown>>,
+) {
+  const encoder = new TextEncoder();
+  return Promise.resolve(
+    new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const event of events) {
+            controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+          }
+          signal?.addEventListener(
+            "abort",
+            () => {
+              controller.error(new DOMException("The operation was aborted.", "AbortError"));
+            },
+            { once: true },
+          );
+        },
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/x-ndjson" },
+      },
+    ),
+  );
+}
+
 describe("TranslateGemmaUI webui", () => {
   let bootstrapState = makeBootstrapState();
 
@@ -513,6 +542,74 @@ describe("TranslateGemmaUI webui", () => {
 
     expect(await screen.findByText("安静区")).toBeInTheDocument();
     expect(screen.queryByText("File translation completed")).not.toBeInTheDocument();
+  });
+
+  it("shows download progress, speed, and allows canceling a model download", async () => {
+    const user = userEvent.setup();
+    const baseFetch = globalThis.fetch as typeof fetch;
+
+    bootstrapState.models = [
+      bootstrapState.models[0],
+      {
+        id: "q6_k",
+        fileName: "translategemma-4b-it.Q6_K.llamafile",
+        size: "3.0 GB",
+        installed: false,
+        active: false,
+        selected: false,
+        loaded: false,
+        visionCapable: false,
+        recommended: false,
+      },
+      bootstrapState.models[1],
+    ];
+
+    Object.defineProperty(globalThis, "fetch", {
+      configurable: true,
+      value: vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        const method = init?.method ?? "GET";
+        if (url === "/api/models/install" && method === "POST") {
+          return streamingDownloadResponse(init?.signal ?? undefined, [
+            {
+              type: "status",
+              stage: "download",
+              message: "Downloading artifact",
+              percent: 0,
+              downloadedBytes: 0,
+              totalBytes: 2147483648,
+            },
+            {
+              type: "progress",
+              stage: "download",
+              message: "Downloading artifact",
+              percent: 37.5,
+              downloadedBytes: 805306368,
+              totalBytes: 2147483648,
+              speedBytesPerSecond: 67108864,
+            },
+          ]);
+        }
+        return baseFetch(input, init);
+      }),
+    });
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Model" });
+    await user.click(screen.getByRole("button", { name: "Model" }));
+    await user.click(screen.getAllByRole("button", { name: "Download" })[0]);
+
+    expect(await screen.findByText("768 MB / 2.00 GB")).toBeInTheDocument();
+    expect(screen.getByText("64.0 MB/s")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel download" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Cancel download" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Download" })).toBeEnabled();
+    });
+    expect(screen.queryByText("768 MB / 2.00 GB")).not.toBeInTheDocument();
   });
 
   it("shows Selected while a chosen model is loading and disables translate actions", async () => {

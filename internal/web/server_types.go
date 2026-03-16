@@ -127,15 +127,18 @@ type appStatePayload struct {
 }
 
 type streamEvent struct {
-	Type        string          `json:"type"`
-	Stage       string          `json:"stage,omitempty"`
-	Message     string          `json:"message,omitempty"`
-	MessageCode string          `json:"messageCode,omitempty"`
-	Percent     float64         `json:"percent,omitempty"`
-	Delta       string          `json:"delta,omitempty"`
-	Output      string          `json:"output,omitempty"`
-	History     *historyPayload `json:"history,omitempty"`
-	Count       int             `json:"count,omitempty"`
+	Type                string          `json:"type"`
+	Stage               string          `json:"stage,omitempty"`
+	Message             string          `json:"message,omitempty"`
+	MessageCode         string          `json:"messageCode,omitempty"`
+	Percent             float64         `json:"percent,omitempty"`
+	DownloadedBytes     int64           `json:"downloadedBytes,omitempty"`
+	TotalBytes          int64           `json:"totalBytes,omitempty"`
+	SpeedBytesPerSecond float64         `json:"speedBytesPerSecond,omitempty"`
+	Delta               string          `json:"delta,omitempty"`
+	Output              string          `json:"output,omitempty"`
+	History             *historyPayload `json:"history,omitempty"`
+	Count               int             `json:"count,omitempty"`
 }
 
 type imageResult struct {
