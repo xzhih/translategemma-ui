@@ -13,7 +13,7 @@ import (
 	"translategemma-ui/internal/modelstore"
 	"translategemma-ui/internal/runtime"
 	lf "translategemma-ui/internal/runtime/llamafile"
-	"translategemma-ui/internal/translate"
+	"translategemma-ui/internal/runtimeutil"
 )
 
 func (s *Server) handleModel(w http.ResponseWriter, r *http.Request) {
@@ -279,6 +279,24 @@ func (s *Server) activateModel(item models.QuantizedModel, emit func(streamEvent
 		_ = emit(streamEvent{Type: "progress", Stage: "load", Message: "Preparing active model", MessageCode: statusCodePreparingActiveModel, Percent: 5})
 	}
 
+	probe := s.probeBackend(s.backendURL)
+	if runtimeutil.CanReuseLoadedRuntime(modelPath, s.state.ActiveModelPath, probe.Ready) {
+		if err := s.applyActiveModelState(item, modelPath); err != nil {
+			if emit != nil {
+				_ = emit(streamEvent{Type: "error", Stage: "save", Message: err.Error()})
+			}
+			return "", err
+		}
+		msg := "Model active"
+		if models.SupportsVision(item) {
+			msg = "Vision runtime active"
+			s.setStatusCode(statusCodeVisionRuntimeActive, msg)
+		} else {
+			s.setStatusCode(statusCodeModelActive, msg)
+		}
+		return msg, nil
+	}
+
 	if err := s.applyActiveModelState(item, modelPath); err != nil {
 		if emit != nil {
 			_ = emit(streamEvent{Type: "error", Stage: "save", Message: err.Error()})
@@ -305,7 +323,7 @@ func (s *Server) preloadSelectedModel(item models.QuantizedModel, emit func(stre
 		}
 		return "", err
 	}
-	if strings.HasSuffix(strings.ToLower(strings.TrimSpace(item.ID)), "_vision") {
+	if models.SupportsVision(item) {
 		msg := "Vision runtime active"
 		s.setStatusCode(statusCodeVisionRuntimeActive, msg)
 		return msg, nil
@@ -317,19 +335,27 @@ func (s *Server) preloadSelectedModel(item models.QuantizedModel, emit func(stre
 
 func (s *Server) applyLoadedState() {
 	cfgChanged := false
-	if s.state.ActiveModelPath != "" && runtimeModeForPath(s.state.ActiveModelPath) != "" && fileExists(s.state.ActiveModelPath) {
-		s.state.RuntimeMode = runtimeModeForPath(s.state.ActiveModelPath)
-		s.runtimeManager.SetPreferredModelPath(s.state.ActiveModelPath)
+	catalog := modelstore.Catalog(s.dataRoot, s.availableModels, strings.TrimSpace(s.cfg.ActiveModelID), strings.TrimSpace(s.state.ActiveModelPath))
+	if idx, item, ok := modelstore.ResolveCatalogItem(catalog, s.state.ActiveModelPath, modelstore.ResolveOptions{
+		PreferTextRuntime: true,
+	}, s.activeModel.ID, s.cfg.ActiveModelID); ok {
+		if idx >= 0 && idx < len(catalog) {
+			s.activeModel = catalog[idx].QuantizedModel
+		} else {
+			s.activeModel = item.QuantizedModel
+		}
+		if s.activeModel.ID != s.cfg.ActiveModelID {
+			cfgChanged = true
+		}
+		runtimeutil.ApplyActiveModel(&s.cfg, &s.state, s.activeModel, item.Path)
+		s.runtimeManager.SetPreferredModelPath(item.Path)
 	} else if p := s.localModelPath(s.activeModel.FileName); p != "" {
-		s.state.ActiveModelPath = p
-		s.state.RuntimeMode = runtimeModeForPath(p)
+		runtimeutil.ApplyRuntimePath(&s.state, p)
 		s.runtimeManager.SetPreferredModelPath(p)
 	} else if item, ok := s.firstInstalledModel(); ok {
 		s.activeModel = item.QuantizedModel
-		s.cfg.ActiveModelID = item.ID
 		cfgChanged = true
-		s.state.ActiveModelPath = item.Path
-		s.state.RuntimeMode = runtimeModeForPath(item.Path)
+		runtimeutil.ApplyActiveModel(&s.cfg, &s.state, item.QuantizedModel, item.Path)
 		s.runtimeManager.SetPreferredModelPath(item.Path)
 	} else {
 		s.state.ActiveModelPath = ""
@@ -378,12 +404,7 @@ func (s *Server) stopRuntimeWithEvents(errorStage string, emit func(streamEvent)
 }
 
 func (s *Server) findModelByID(id string) (models.QuantizedModel, bool) {
-	for _, item := range s.availableModels {
-		if item.ID == id {
-			return item, true
-		}
-	}
-	return models.QuantizedModel{}, false
+	return models.FindByID(s.availableModels, id)
 }
 
 func (s *Server) localModelPath(fileName string) string {
@@ -392,12 +413,10 @@ func (s *Server) localModelPath(fileName string) string {
 
 func (s *Server) firstInstalledModel() (modelstore.CatalogItem, bool) {
 	catalog := modelstore.Catalog(s.dataRoot, s.availableModels, strings.TrimSpace(s.cfg.ActiveModelID), strings.TrimSpace(s.state.ActiveModelPath))
-	for _, item := range catalog {
-		if item.Installed {
-			return item, true
-		}
-	}
-	return modelstore.CatalogItem{}, false
+	_, item, ok := modelstore.ResolveCatalogItem(catalog, s.state.ActiveModelPath, modelstore.ResolveOptions{
+		PreferTextRuntime: true,
+	}, s.activeModel.ID, s.cfg.ActiveModelID)
+	return item, ok
 }
 
 func (s *Server) hasInstalledModel() bool {
@@ -406,7 +425,7 @@ func (s *Server) hasInstalledModel() bool {
 }
 
 func (s *Server) visionEnabled() bool {
-	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(s.activeModel.ID)), "_vision") ||
+	return models.SupportsVision(s.activeModel) ||
 		strings.Contains(strings.ToLower(filepath.Base(strings.TrimSpace(s.state.ActiveModelPath))), ".mmproj-")
 }
 
@@ -422,17 +441,7 @@ func (s *Server) runtimeView() (bool, uiStatus) {
 }
 
 func (s *Server) syncBackendURL(next string, persist bool) {
-	next = runtime.NormalizeBackendURL(next)
-	if next == "" {
-		next = runtime.NormalizeBackendURL(runtime.DefaultBackendURL)
-	}
-	s.backendURL = next
-	s.state.BackendURL = next
-	if updater, ok := s.translator.(interface{ SetBackendURL(string) }); ok {
-		updater.SetBackendURL(next)
-	} else if s.translator == nil {
-		s.translator = translate.NewService(next)
-	}
+	s.backendURL = runtimeutil.SyncBackendURL(&s.state, next, s.runtimeManager, s.translator)
 	if persist {
 		if err := config.SaveAppState(s.dataRoot, s.state); err != nil {
 			s.setStatus(err.Error())
@@ -454,17 +463,11 @@ func (s *Server) modelPayloads(runtimeReady bool) []modelPayload {
 			Active:        loaded,
 			Selected:      selected,
 			Loaded:        loaded,
-			VisionCapable: modelSupportsVision(item.QuantizedModel),
+			VisionCapable: models.SupportsVision(item.QuantizedModel),
 			Recommended:   item.Recommended,
 		})
 	}
 	return out
-}
-
-func modelSupportsVision(item models.QuantizedModel) bool {
-	lowerID := strings.ToLower(strings.TrimSpace(item.ID))
-	lowerFile := strings.ToLower(strings.TrimSpace(item.FileName))
-	return strings.HasSuffix(lowerID, "_vision") || strings.Contains(lowerFile, ".mmproj-")
 }
 
 func (s *Server) upsertArtifact(next config.InstalledArtifact) {
@@ -479,9 +482,7 @@ func (s *Server) upsertArtifact(next config.InstalledArtifact) {
 
 func (s *Server) applyActiveModelState(item models.QuantizedModel, modelPath string) error {
 	s.activeModel = item
-	s.cfg.ActiveModelID = item.ID
-	s.state.ActiveModelPath = modelPath
-	s.state.RuntimeMode = runtimeModeForPath(modelPath)
+	runtimeutil.ApplyActiveModel(&s.cfg, &s.state, item, modelPath)
 	s.runtimeManager.SetPreferredModelPath(modelPath)
 	s.upsertArtifact(config.InstalledArtifact{
 		Kind:      "model",
@@ -497,11 +498,4 @@ func (s *Server) applyActiveModelState(item models.QuantizedModel, modelPath str
 		return err
 	}
 	return nil
-}
-
-func runtimeModeForPath(path string) string {
-	if strings.Contains(strings.ToLower(path), ".llamafile") {
-		return "single_file_llamafile"
-	}
-	return ""
 }

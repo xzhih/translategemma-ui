@@ -196,15 +196,14 @@ func (m *model) syncCatalogList() tea.Cmd {
 }
 
 func (m model) preferredCatalogIndex() int {
-	if idx, _, ok := matchCatalogByPath(m.catalog, m.state.ActiveModelPath); ok {
-		return idx
-	}
+	preferredIDs := make([]string, 0, 2)
 	if m.selected != nil {
-		if idx, _, ok := matchCatalogByID(m.catalog, m.selected.ID); ok {
-			return idx
-		}
+		preferredIDs = append(preferredIDs, m.selected.ID)
 	}
-	if idx, _, ok := matchCatalogByID(m.catalog, m.cfg.ActiveModelID); ok {
+	preferredIDs = append(preferredIDs, m.cfg.ActiveModelID)
+	if idx, _, ok := modelstore.ResolveCatalogItem(m.catalog, m.state.ActiveModelPath, modelstore.ResolveOptions{
+		PreferTextRuntime: true,
+	}, preferredIDs...); ok {
 		return idx
 	}
 	if m.cursor >= 0 && m.cursor < len(m.catalog) {

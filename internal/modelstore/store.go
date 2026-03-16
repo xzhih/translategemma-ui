@@ -8,6 +8,7 @@ import (
 	"translategemma-ui/internal/config"
 	"translategemma-ui/internal/models"
 	"translategemma-ui/internal/platform"
+	"translategemma-ui/internal/runtimeutil"
 )
 
 type CatalogItem struct {
@@ -25,7 +26,7 @@ func Catalog(dataRoot string, available []models.QuantizedModel, activeModelID, 
 			QuantizedModel: item,
 			Installed:      path != "",
 			Path:           path,
-			Active:         path != "" && (item.ID == activeModelID || path == activeModelPath),
+			Active:         path != "" && (item.ID == activeModelID || runtimeutil.SameRuntimePath(path, activeModelPath)),
 		})
 	}
 	return items

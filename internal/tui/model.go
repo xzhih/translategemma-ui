@@ -2,7 +2,6 @@ package tui
 
 import (
 	"errors"
-	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -21,6 +20,7 @@ import (
 	"translategemma-ui/internal/modelstore"
 	"translategemma-ui/internal/runtime"
 	lf "translategemma-ui/internal/runtime/llamafile"
+	"translategemma-ui/internal/runtimeutil"
 	"translategemma-ui/internal/translate"
 )
 
@@ -141,10 +141,7 @@ func newModel(preselectedModelID, dataRoot string) model {
 	all := huggingface.ListTranslateGemmaModels()
 	cfg, _ := config.LoadAppConfig(dataRoot)
 	state, _ := config.LoadAppState(dataRoot)
-	backendURL := runtime.NormalizeBackendURL(state.BackendURL)
-	if strings.TrimSpace(state.BackendURL) == "" {
-		backendURL = runtime.NormalizeBackendURL(runtime.DefaultBackendURL)
-	}
+	backendURL := runtimeutil.SyncBackendURL(&state, state.BackendURL)
 
 	activeID := strings.TrimSpace(preselectedModelID)
 	if activeID == "" {
@@ -257,22 +254,12 @@ func (m model) localModelPath(fileName string) string {
 func (m *model) bootstrapInstalledRuntime(preferredID string) bool {
 	catalog := modelstore.Catalog(m.dataRoot, m.models, strings.TrimSpace(preferredID), strings.TrimSpace(m.state.ActiveModelPath))
 
-	if idx, item, ok := matchCatalogByPath(catalog, m.state.ActiveModelPath); ok {
+	if idx, item, ok := modelstore.ResolveCatalogItem(catalog, m.state.ActiveModelPath, modelstore.ResolveOptions{
+		PreferTextRuntime: true,
+	}, preferredID, m.cfg.ActiveModelID); ok {
 		m.cursor = idx
 		return m.prepareStartupRuntime(m.setKnownSelection(item, item.Path))
 	}
-	if idx, item, ok := matchCatalogByID(catalog, preferredID); ok {
-		m.cursor = idx
-		return m.prepareStartupRuntime(m.setKnownSelection(item, item.Path))
-	}
-	for idx, item := range catalog {
-		if !item.Installed {
-			continue
-		}
-		m.cursor = idx
-		return m.prepareStartupRuntime(m.setKnownSelection(item, item.Path))
-	}
-
 	return false
 }
 
@@ -280,7 +267,7 @@ func (m *model) setKnownSelection(item modelstore.CatalogItem, modelPath string)
 	selected := item.QuantizedModel
 	m.selected = &selected
 	m.selectedName = selected.FileName
-	m.cfg.ActiveModelID = selected.ID
+	runtimeutil.ApplyActiveModel(&m.cfg, &m.state, selected, modelPath)
 	_ = config.SaveAppConfig(m.dataRoot, m.cfg)
 	return m.applyRuntimePath(modelPath)
 }
@@ -308,24 +295,14 @@ func (m *model) applyRuntimePath(path string) string {
 	if path == "" {
 		return ""
 	}
-	m.state.ActiveModelPath = path
-	m.state.RuntimeMode = runtimeModeForPath(path)
+	runtimeutil.ApplyRuntimePath(&m.state, path)
 	m.runtime.SetPreferredModelPath(path)
 	_ = config.SaveAppState(m.dataRoot, m.state)
 	return path
 }
 
 func (m *model) syncBackendURL(next string, persist bool) {
-	next = runtime.NormalizeBackendURL(next)
-	if next == "" {
-		next = runtime.NormalizeBackendURL(runtime.DefaultBackendURL)
-	}
-	m.backendURL = next
-	m.state.BackendURL = next
-	m.runtime.SetBackendURL(next)
-	if m.service != nil {
-		m.service.SetBackendURL(next)
-	}
+	m.backendURL = runtimeutil.SyncBackendURL(&m.state, next, m.runtime, m.service)
 	if persist {
 		_ = config.SaveAppState(m.dataRoot, m.state)
 	}
@@ -334,83 +311,16 @@ func (m *model) syncBackendURL(next string, persist bool) {
 func (m *model) resolveActiveRuntimePath() string {
 	catalog := modelstore.Catalog(m.dataRoot, m.models, strings.TrimSpace(m.cfg.ActiveModelID), strings.TrimSpace(m.state.ActiveModelPath))
 
-	if idx, item, ok := matchCatalogByPath(catalog, m.state.ActiveModelPath); ok {
-		m.cursor = idx
-		return m.setKnownSelection(item, item.Path)
-	}
+	preferredIDs := make([]string, 0, 2)
 	if m.selected != nil {
-		if idx, item, ok := matchCatalogByID(catalog, m.selected.ID); ok {
-			m.cursor = idx
-			return m.setKnownSelection(item, item.Path)
-		}
+		preferredIDs = append(preferredIDs, m.selected.ID)
 	}
-	if idx, item, ok := matchCatalogByID(catalog, m.cfg.ActiveModelID); ok {
+	preferredIDs = append(preferredIDs, m.cfg.ActiveModelID)
+	if idx, item, ok := modelstore.ResolveCatalogItem(catalog, m.state.ActiveModelPath, modelstore.ResolveOptions{
+		PreferTextRuntime: true,
+	}, preferredIDs...); ok {
 		m.cursor = idx
 		return m.setKnownSelection(item, item.Path)
-	}
-	if m.cursor >= 0 && m.cursor < len(catalog) {
-		item := catalog[m.cursor]
-		if item.Installed {
-			return m.setKnownSelection(item, item.Path)
-		}
-	}
-	for idx, item := range catalog {
-		if !item.Installed {
-			continue
-		}
-		m.cursor = idx
-		return m.setKnownSelection(item, item.Path)
-	}
-	return ""
-}
-
-func matchCatalogByPath(items []modelstore.CatalogItem, targetPath string) (int, modelstore.CatalogItem, bool) {
-	for idx, item := range items {
-		if item.Path == "" || !sameRuntimePath(item.Path, targetPath) {
-			continue
-		}
-		return idx, item, true
-	}
-	return 0, modelstore.CatalogItem{}, false
-}
-
-func matchCatalogByID(items []modelstore.CatalogItem, targetID string) (int, modelstore.CatalogItem, bool) {
-	targetID = strings.TrimSpace(targetID)
-	if targetID == "" {
-		return 0, modelstore.CatalogItem{}, false
-	}
-	for idx, item := range items {
-		if item.ID != targetID || !item.Installed {
-			continue
-		}
-		return idx, item, true
-	}
-	return 0, modelstore.CatalogItem{}, false
-}
-
-func sameRuntimePath(a, b string) bool {
-	a = strings.TrimSpace(a)
-	b = strings.TrimSpace(b)
-	if a == "" || b == "" {
-		return false
-	}
-	if filepath.Clean(a) == filepath.Clean(b) {
-		return true
-	}
-	return runtimeStem(a) == runtimeStem(b)
-}
-
-func runtimeStem(path string) string {
-	base := strings.ToLower(filepath.Base(strings.TrimSpace(path)))
-	for _, suffix := range []string{".llamafile.exe", ".llamafile", ".exe"} {
-		base = strings.TrimSuffix(base, suffix)
-	}
-	return base
-}
-
-func runtimeModeForPath(path string) string {
-	if strings.Contains(strings.ToLower(path), ".llamafile") {
-		return "single_file_llamafile"
 	}
 	return ""
 }

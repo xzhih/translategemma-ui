@@ -11,6 +11,7 @@ import (
 	"translategemma-ui/internal/huggingface"
 	"translategemma-ui/internal/models"
 	lf "translategemma-ui/internal/runtime/llamafile"
+	"translategemma-ui/internal/runtimeutil"
 	"translategemma-ui/internal/translate"
 )
 
@@ -142,8 +143,7 @@ func runActivateRuntimeTask(ctx context.Context, out chan<- tea.Msg, dataRoot st
 	}
 	_ = sendTaskMsg(ctx, out, provisionProgressMsg{Stage: "load", Percent: 0, Message: "Preparing active runtime"})
 	runtimeManager.SetPreferredModelPath(modelPath)
-	state.ActiveModelPath = modelPath
-	state.RuntimeMode = runtimeModeForPath(modelPath)
+	runtimeutil.ApplyRuntimePath(&state, modelPath)
 	_ = config.SaveAppState(dataRoot, state)
 
 	if ctx.Err() != nil {
@@ -166,7 +166,7 @@ func runActivateRuntimeTask(ctx context.Context, out chan<- tea.Msg, dataRoot st
 		_ = sendTaskMsg(ctx, out, provisionErrMsg{Message: err.Error()})
 		return
 	}
-	state.BackendURL = runtimeManager.CurrentBackendURL()
+	state.BackendURL = runtimeutil.SyncBackendURL(&state, runtimeManager.CurrentBackendURL(), runtimeManager)
 	_ = config.SaveAppState(dataRoot, state)
 	_ = sendTaskMsg(ctx, out, provisionProgressMsg{Stage: "load", Percent: 100, Message: status.Message})
 	_ = sendTaskMsg(ctx, out, provisionDoneMsg{

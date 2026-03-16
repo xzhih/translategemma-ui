@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -90,7 +89,7 @@ func ListTranslateGemmaModels() []models.QuantizedModel {
 // RecommendedVisionRuntime returns the supported vision runtime SKU.
 func RecommendedVisionRuntime() (models.QuantizedModel, bool) {
 	for _, item := range listArtifacts() {
-		if supportsVision(item) {
+		if models.SupportsVision(item) {
 			return item, true
 		}
 	}
@@ -233,10 +232,7 @@ func manifestToCatalog(doc manifest) ([]models.QuantizedModel, error) {
 		return nil, fmt.Errorf("runtime manifest did not produce usable runtimes")
 	}
 
-	sort.Slice(out, func(i, j int) bool {
-		return catalogRank(out[i]) < catalogRank(out[j])
-	})
-	return out, nil
+	return models.PreferredOrder(out), nil
 }
 
 func builtinCatalog() []models.QuantizedModel {
@@ -322,26 +318,6 @@ func runtimeGOOS() string {
 		return current[:idx]
 	}
 	return current
-}
-
-func supportsVision(item models.QuantizedModel) bool {
-	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(item.ID)), "_vision") ||
-		strings.Contains(strings.ToLower(item.FileName), ".mmproj-")
-}
-
-func catalogRank(item models.QuantizedModel) string {
-	switch item.ID {
-	case "q4_k_m":
-		return "1"
-	case "q6_k":
-		return "2"
-	case "q8_0":
-		return "3"
-	case "q8_0_vision":
-		return "4"
-	default:
-		return "9:" + item.ID
-	}
 }
 
 func writeDownloadedArtifact(ctx context.Context, src io.Reader, dstPath string, contentLength, sizeBytes int64, onProgress func(DownloadProgress)) (string, error) {

@@ -33,6 +33,7 @@ type fakeRuntimeManager struct {
 }
 
 type fakeTranslator struct {
+	backendURL       string
 	translateFn      func(context.Context, translate.Request) (string, error)
 	streamFn         func(context.Context, translate.Request, func(string) error, func(translate.ProgressUpdate) error) (string, error)
 	translateImageFn func(context.Context, translate.ImageRequest) (string, error)
@@ -62,6 +63,14 @@ func (f fakeTranslator) TranslateImageWithContext(ctx context.Context, req trans
 		return "", nil
 	}
 	return f.translateImageFn(ctx, req)
+}
+
+func (f fakeTranslator) SetBackendURL(next string) {
+	f.backendURL = next
+}
+
+func (f *fakeRuntimeManager) SetBackendURL(next string) {
+	f.backendURL = next
 }
 
 func (f *fakeRuntimeManager) SetPreferredModelPath(path string) { f.modelPath = path }
@@ -625,6 +634,39 @@ func TestModelActivatePreloadsReplacementRuntime(t *testing.T) {
 	}
 	if !strings.Contains(body, `"message":"Loading model into runtime"`) {
 		t.Fatalf("expected loading progress event while preloading, got: %s", body)
+	}
+}
+
+func TestModelActivateReusesAlreadyLoadedRuntime(t *testing.T) {
+	s := newTestServer(t)
+	manager := s.runtimeManager.(*fakeRuntimeManager)
+	modelPath := filepath.Join(s.dataRoot, "runtimes", "translategemma-4b-it.Q8_0.llamafile")
+	if err := os.MkdirAll(filepath.Dir(modelPath), 0o755); err != nil {
+		t.Fatalf("mkdir runtimes: %v", err)
+	}
+	if err := os.WriteFile(modelPath, []byte("runtime"), 0o644); err != nil {
+		t.Fatalf("write runtime artifact: %v", err)
+	}
+	s.state.ActiveModelPath = modelPath
+	s.runtimeManager.SetPreferredModelPath(modelPath)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/models/activate", strings.NewReader("model_id=q8_0"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	s.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for streaming endpoint, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "Model active") {
+		t.Fatalf("expected active completion message, got: %s", body)
+	}
+	if manager.stopCalls != 0 {
+		t.Fatalf("expected already loaded runtime to skip stop, got %d calls", manager.stopCalls)
+	}
+	if manager.ensureCalls != 0 {
+		t.Fatalf("expected already loaded runtime to skip preload, got %d calls", manager.ensureCalls)
 	}
 }
 

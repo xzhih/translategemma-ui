@@ -17,6 +17,7 @@ import (
 	"translategemma-ui/internal/models"
 	"translategemma-ui/internal/runtime"
 	lf "translategemma-ui/internal/runtime/llamafile"
+	"translategemma-ui/internal/runtimeutil"
 	"translategemma-ui/internal/translate"
 )
 
@@ -33,10 +34,7 @@ func newServer(modelID, dataRoot string) (*Server, error) {
 	modelsList := huggingface.ListTranslateGemmaModels()
 	cfg, _ := config.LoadAppConfig(dataRoot)
 	state, _ := config.LoadAppState(dataRoot)
-	backendURL := runtime.NormalizeBackendURL(state.BackendURL)
-	if strings.TrimSpace(state.BackendURL) == "" {
-		backendURL = runtime.NormalizeBackendURL(runtime.DefaultBackendURL)
-	}
+	backendURL := runtimeutil.SyncBackendURL(&state, state.BackendURL)
 	runtimeManager := lf.NewManager(dataRoot, backendURL)
 
 	activeID := strings.TrimSpace(modelID)

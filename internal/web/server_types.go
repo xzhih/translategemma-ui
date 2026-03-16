@@ -26,9 +26,11 @@ type translationService interface {
 	TranslateWithContext(context.Context, translate.Request) (string, error)
 	StreamTranslateWithContextAndProgress(context.Context, translate.Request, func(string) error, func(translate.ProgressUpdate) error) (string, error)
 	TranslateImageWithContext(context.Context, translate.ImageRequest) (string, error)
+	SetBackendURL(string)
 }
 
 type runtimeController interface {
+	SetBackendURL(string)
 	SetPreferredModelPath(string)
 	CurrentBackendURL() string
 	Stop() error

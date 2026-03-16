@@ -12,6 +12,7 @@ import (
 	"translategemma-ui/internal/config"
 	"translategemma-ui/internal/languages"
 	"translategemma-ui/internal/runtime"
+	"translategemma-ui/internal/runtimeutil"
 	"translategemma-ui/internal/translate"
 )
 
@@ -221,7 +222,7 @@ func (m model) updateModelScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		probe := runtime.ProbeBackend(m.backendURL)
 		m.runtimeReady = probe.Ready
 		_ = m.syncCatalogList()
-		if selectedItem.Installed && sameRuntimePath(selectedItem.Path, m.state.ActiveModelPath) && probe.Ready {
+		if selectedItem.Installed && runtimeutil.CanReuseLoadedRuntime(selectedItem.Path, m.state.ActiveModelPath, probe.Ready) {
 			m.screen = translateScreen
 			m.provisionStage = ""
 			m.downloadPercent = -1

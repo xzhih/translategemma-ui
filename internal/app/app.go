@@ -10,6 +10,7 @@ import (
 	"translategemma-ui/internal/huggingface"
 	"translategemma-ui/internal/models"
 	"translategemma-ui/internal/modelstore"
+	"translategemma-ui/internal/runtimeutil"
 	"translategemma-ui/internal/tui"
 	"translategemma-ui/internal/version"
 	"translategemma-ui/internal/web"
@@ -109,7 +110,7 @@ func runModelsCommand(args []string) error {
 		if strings.TrimSpace(modelID) == "" {
 			return errors.New("missing --id for models download")
 		}
-		item, ok := findModelByID(available, modelID)
+		item, ok := models.FindByID(available, modelID)
 		if !ok {
 			return fmt.Errorf("unknown model id %q", modelID)
 		}
@@ -122,9 +123,7 @@ func runModelsCommand(args []string) error {
 			return err
 		}
 		fmt.Println()
-		state.ActiveModelPath = modelPath
-		state.RuntimeMode = "single_file_llamafile"
-		cfg.ActiveModelID = item.ID
+		runtimeutil.ApplyActiveModel(&cfg, &state, item, modelPath)
 		upsertArtifact(&state, config.InstalledArtifact{
 			Kind:      "model",
 			ID:        item.ID,
@@ -151,7 +150,7 @@ func runModelsCommand(args []string) error {
 		if strings.TrimSpace(modelID) == "" {
 			return errors.New("missing --id for models delete")
 		}
-		item, ok := findModelByID(available, modelID)
+		item, ok := models.FindByID(available, modelID)
 		if !ok {
 			return fmt.Errorf("unknown model id %q", modelID)
 		}
@@ -177,15 +176,6 @@ func runModelsCommand(args []string) error {
 	default:
 		return fmt.Errorf("unknown models subcommand %q", args[0])
 	}
-}
-
-func findModelByID(items []models.QuantizedModel, id string) (models.QuantizedModel, bool) {
-	for _, item := range items {
-		if item.ID == id {
-			return item, true
-		}
-	}
-	return models.QuantizedModel{}, false
 }
 
 func upsertArtifact(state *config.AppState, next config.InstalledArtifact) {

@@ -16,7 +16,13 @@ import (
 	"translategemma-ui/internal/modelstore"
 	"translategemma-ui/internal/runtime"
 	lf "translategemma-ui/internal/runtime/llamafile"
+	"translategemma-ui/internal/runtimeutil"
 	"translategemma-ui/internal/translate"
+)
+
+var (
+	prepareTranslationRuntimeFn = prepareTranslationRuntime
+	printTranslateResultFn      = printTranslateResult
 )
 
 func runTranslateCommand(args []string) error {
@@ -34,7 +40,7 @@ func runTranslateCommand(args []string) error {
 	}
 }
 
-func runTranslateText(args []string) error {
+func runTranslateText(args []string) (err error) {
 	fs := flag.NewFlagSet("translate text", flag.ContinueOnError)
 	var (
 		text        string
@@ -57,10 +63,13 @@ func runTranslateText(args []string) error {
 		return errors.New("missing --text")
 	}
 
-	root, service, _, err := prepareTranslationRuntime(modelID, false)
+	root, service, _, cleanup, err := prepareTranslationRuntimeFn(modelID, false)
 	if err != nil {
 		return err
 	}
+	defer func() {
+		err = errors.Join(err, cleanup())
+	}()
 
 	output, err := service.Translate(translate.Request{
 		SourceLang:             sourceLang,
@@ -71,10 +80,10 @@ func runTranslateText(args []string) error {
 	if err != nil {
 		return err
 	}
-	return printTranslateResult(root, selectedModelID(root), output, asJSON)
+	return printTranslateResultFn(root, selectedModelID(root), output, asJSON)
 }
 
-func runTranslateImage(args []string) error {
+func runTranslateImage(args []string) (err error) {
 	fs := flag.NewFlagSet("translate image", flag.ContinueOnError)
 	var (
 		filePath    string
@@ -102,10 +111,13 @@ func runTranslateImage(args []string) error {
 		return err
 	}
 
-	root, service, _, err := prepareTranslationRuntime(modelID, true)
+	root, service, _, cleanup, err := prepareTranslationRuntimeFn(modelID, true)
 	if err != nil {
 		return err
 	}
+	defer func() {
+		err = errors.Join(err, cleanup())
+	}()
 
 	output, err := service.TranslateImage(translate.ImageRequest{
 		SourceLang:             sourceLang,
@@ -117,13 +129,13 @@ func runTranslateImage(args []string) error {
 	if err != nil {
 		return err
 	}
-	return printTranslateResult(root, selectedModelID(root), output, asJSON)
+	return printTranslateResultFn(root, selectedModelID(root), output, asJSON)
 }
 
-func prepareTranslationRuntime(requestedModelID string, requireVision bool) (string, *translate.Service, models.QuantizedModel, error) {
+func prepareTranslationRuntime(requestedModelID string, requireVision bool) (string, *translate.Service, models.QuantizedModel, func() error, error) {
 	root, err := config.EnsureDataDirs("")
 	if err != nil {
-		return "", nil, models.QuantizedModel{}, fmt.Errorf("initialize data dir: %w", err)
+		return "", nil, models.QuantizedModel{}, nil, fmt.Errorf("initialize data dir: %w", err)
 	}
 	cfg, _ := config.LoadAppConfig(root)
 	state, _ := config.LoadAppState(root)
@@ -131,46 +143,45 @@ func prepareTranslationRuntime(requestedModelID string, requireVision bool) (str
 
 	item, modelPath, err := resolveInstalledModel(root, available, cfg, state, requestedModelID, requireVision)
 	if err != nil {
-		return "", nil, models.QuantizedModel{}, err
+		return "", nil, models.QuantizedModel{}, nil, err
 	}
 
-	backendURL := runtime.NormalizeBackendURL(state.BackendURL)
-	if strings.TrimSpace(state.BackendURL) == "" {
-		backendURL = runtime.NormalizeBackendURL(runtime.DefaultBackendURL)
-	}
+	backendURL := runtimeutil.SyncBackendURL(&state, state.BackendURL)
 	manager := lf.NewManager(root, backendURL)
 	manager.SetPreferredModelPath(modelPath)
+	cleanup := manager.StopOwned
+	previousActiveModelPath := state.ActiveModelPath
 
-	state.ActiveModelPath = modelPath
-	state.RuntimeMode = runtimeModeForPath(modelPath)
-	cfg.ActiveModelID = item.ID
+	runtimeutil.ApplyActiveModel(&cfg, &state, item, modelPath)
 	if err := config.SaveAppConfig(root, cfg); err != nil {
-		return "", nil, models.QuantizedModel{}, err
+		return "", nil, models.QuantizedModel{}, nil, err
 	}
 	if err := config.SaveAppState(root, state); err != nil {
-		return "", nil, models.QuantizedModel{}, err
+		return "", nil, models.QuantizedModel{}, nil, err
 	}
 
-	_ = manager.Stop()
-	if _, err := manager.EnsureRunningWithProgress(nil); err != nil {
-		return "", nil, models.QuantizedModel{}, err
-	}
-	backendURL = manager.CurrentBackendURL()
-	state.BackendURL = backendURL
-	if err := config.SaveAppState(root, state); err != nil {
-		return "", nil, models.QuantizedModel{}, err
+	probe := runtime.ProbeBackend(backendURL)
+	if !runtimeutil.CanReuseLoadedRuntime(modelPath, previousActiveModelPath, probe.Ready) {
+		_ = manager.Stop()
+		if _, err := manager.EnsureRunningWithProgress(nil); err != nil {
+			return "", nil, models.QuantizedModel{}, nil, err
+		}
+		backendURL = runtimeutil.SyncBackendURL(&state, manager.CurrentBackendURL(), manager)
+		if err := config.SaveAppState(root, state); err != nil {
+			return "", nil, models.QuantizedModel{}, nil, err
+		}
 	}
 
-	return root, translate.NewService(backendURL), item, nil
+	return root, translate.NewService(backendURL), item, cleanup, nil
 }
 
 func resolveInstalledModel(dataRoot string, available []models.QuantizedModel, cfg config.AppConfig, state config.AppState, requestedModelID string, requireVision bool) (models.QuantizedModel, string, error) {
 	if requestedModelID != "" {
-		item, ok := findModelByID(available, requestedModelID)
+		item, ok := models.FindByID(available, requestedModelID)
 		if !ok {
 			return models.QuantizedModel{}, "", fmt.Errorf("unknown model id %q", requestedModelID)
 		}
-		if requireVision && !supportsVision(item) {
+		if requireVision && !models.SupportsVision(item) {
 			return models.QuantizedModel{}, "", fmt.Errorf("model %q does not support image translation", requestedModelID)
 		}
 		path := modelstore.LocalModelPath(dataRoot, item.FileName)
@@ -180,20 +191,17 @@ func resolveInstalledModel(dataRoot string, available []models.QuantizedModel, c
 		return item, path, nil
 	}
 
-	if state.ActiveModelPath != "" && runtimeModeForPath(state.ActiveModelPath) != "" && fileExists(state.ActiveModelPath) {
-		if item, ok := findModelByID(available, strings.TrimSpace(cfg.ActiveModelID)); ok {
-			if !requireVision || supportsVision(item) {
-				return item, state.ActiveModelPath, nil
-			}
-		}
-		if !requireVision || strings.Contains(strings.ToLower(filepath.Base(state.ActiveModelPath)), ".mmproj-") {
-			return models.QuantizedModel{ID: strings.TrimSpace(cfg.ActiveModelID), FileName: filepath.Base(state.ActiveModelPath)}, state.ActiveModelPath, nil
-		}
+	catalog := modelstore.Catalog(dataRoot, available, strings.TrimSpace(cfg.ActiveModelID), strings.TrimSpace(state.ActiveModelPath))
+	if _, item, ok := modelstore.ResolveCatalogItem(catalog, state.ActiveModelPath, modelstore.ResolveOptions{
+		RequireVision:     requireVision,
+		PreferTextRuntime: !requireVision,
+	}, cfg.ActiveModelID); ok {
+		return item.QuantizedModel, item.Path, nil
 	}
 
-	for _, item := range preferredInstalledOrder(available, requireVision) {
-		if path := modelstore.LocalModelPath(dataRoot, item.FileName); path != "" {
-			return item, path, nil
+	if state.ActiveModelPath != "" && runtimeutil.RuntimeModeForPath(state.ActiveModelPath) != "" && fileExists(state.ActiveModelPath) {
+		if !requireVision || strings.Contains(strings.ToLower(filepath.Base(state.ActiveModelPath)), ".mmproj-") {
+			return models.QuantizedModel{ID: strings.TrimSpace(cfg.ActiveModelID), FileName: filepath.Base(state.ActiveModelPath)}, state.ActiveModelPath, nil
 		}
 	}
 
@@ -202,42 +210,6 @@ func resolveInstalledModel(dataRoot string, available []models.QuantizedModel, c
 		modeHint = "image"
 	}
 	return models.QuantizedModel{}, "", fmt.Errorf("no local %s runtime installed; use TUI/WebUI or `translategemma-ui models download --id ...` first", modeHint)
-}
-
-func preferredInstalledOrder(available []models.QuantizedModel, requireVision bool) []models.QuantizedModel {
-	out := make([]models.QuantizedModel, 0, len(available))
-	for _, item := range available {
-		if requireVision && !supportsVision(item) {
-			continue
-		}
-		if !requireVision && supportsVision(item) {
-			continue
-		}
-		out = append(out, item)
-	}
-	sortModels(out)
-	return out
-}
-
-func sortModels(items []models.QuantizedModel) {
-	order := map[string]int{
-		"q4_k_m":      1,
-		"q6_k":        2,
-		"q8_0":        3,
-		"q8_0_vision": 4,
-	}
-	for i := 0; i < len(items); i++ {
-		for j := i + 1; j < len(items); j++ {
-			if order[items[j].ID] < order[items[i].ID] {
-				items[i], items[j] = items[j], items[i]
-			}
-		}
-	}
-}
-
-func supportsVision(item models.QuantizedModel) bool {
-	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(item.ID)), "_vision") ||
-		strings.Contains(strings.ToLower(item.FileName), ".mmproj-")
 }
 
 func readImageInput(path string) ([]byte, string, error) {
@@ -280,11 +252,4 @@ func selectedModelID(root string) string {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
-}
-
-func runtimeModeForPath(path string) string {
-	if strings.Contains(strings.ToLower(path), ".llamafile") {
-		return "single_file_llamafile"
-	}
-	return ""
 }
