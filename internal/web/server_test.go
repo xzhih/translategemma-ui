@@ -82,6 +82,13 @@ func (f *fakeRuntimeManager) CurrentBackendURL() string {
 	return f.backendURL
 }
 
+func (f *fakeRuntimeManager) RuntimeStatus() runtime.Status {
+	if f.ready {
+		return runtime.Status{Ready: true, Message: "Runtime ready"}
+	}
+	return runtime.Status{Ready: false, Message: "Runtime idle"}
+}
+
 func (f *fakeRuntimeManager) Stop() error {
 	f.stopCalls++
 	f.ready = false
@@ -136,12 +143,6 @@ func newTestServer(t *testing.T) *Server {
 			{ID: "q2_k", FileName: "translategemma-4b-it.Q2_K.llamafile", Size: "1.6 GB"},
 		}, "q8_0"),
 		languages: supportedLanguages(),
-		probeBackend: func(string) runtime.Status {
-			if manager.ready {
-				return runtime.Status{Ready: true, Message: "Runtime ready"}
-			}
-			return runtime.Status{Ready: false, Message: "Runtime idle"}
-		},
 		now: func() time.Time {
 			return time.Date(2026, time.March, 6, 9, 27, 54, 0, time.UTC)
 		},
@@ -240,9 +241,7 @@ func TestBootstrapReturnsJSONState(t *testing.T) {
 func TestBootstrapReportsIdleWithoutAutoStartingRuntime(t *testing.T) {
 	s := newTestServer(t)
 	manager := s.runtimeManager.(*fakeRuntimeManager)
-	s.probeBackend = func(string) runtime.Status {
-		return runtime.Status{Ready: false, Message: "offline"}
-	}
+	manager.ready = false
 	modelPath := filepath.Join(s.dataRoot, "runtimes", "translategemma-4b-it.Q8_0.llamafile")
 	if err := os.MkdirAll(filepath.Dir(modelPath), 0o755); err != nil {
 		t.Fatalf("mkdir runtimes: %v", err)
@@ -339,9 +338,7 @@ func TestBootstrapIncludesExpandedModelState(t *testing.T) {
 
 func TestBootstrapIgnoresUncatalogedRuntimeFiles(t *testing.T) {
 	s := newTestServer(t)
-	s.probeBackend = func(string) runtime.Status {
-		return runtime.Status{Ready: false, Message: "offline"}
-	}
+	s.runtimeManager.(*fakeRuntimeManager).ready = false
 	roguePath := filepath.Join(s.dataRoot, "runtimes", "custom-runtime.llamafile")
 	if err := os.MkdirAll(filepath.Dir(roguePath), 0o755); err != nil {
 		t.Fatalf("mkdir runtimes: %v", err)
@@ -807,5 +804,135 @@ func TestTranslateStreamEmitsProgressAndStoresSingleHistoryEntry(t *testing.T) {
 	}
 	if got := s.historyCount(); got != 1 {
 		t.Fatalf("expected one merged history entry, got %d", got)
+	}
+}
+
+func TestTranslateAPIAcceptsJSONPayloadAndReturnsJSONResult(t *testing.T) {
+	s := newTestServer(t)
+	s.translator = fakeTranslator{
+		translateFn: func(ctx context.Context, req translate.Request) (string, error) {
+			if ctx == nil {
+				t.Fatalf("expected request context to be passed to translator")
+			}
+			if req.SourceLang != "en" || req.TargetLang != "zh-CN" {
+				t.Fatalf("unexpected request languages: %#v", req)
+			}
+			if req.Text != "Hello world" {
+				t.Fatalf("unexpected request text: %#v", req)
+			}
+			if req.TranslationInstruction != "Use product copy tone." {
+				t.Fatalf("unexpected translation instruction: %#v", req)
+			}
+			return "你好，世界", nil
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/translate", strings.NewReader(`{"source_lang":"en","target_lang":"zh-CN","input_text":"Hello world","translation_instruction":"Use product copy tone."}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://example.com")
+	rec := httptest.NewRecorder()
+	s.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("expected wildcard CORS header, got %q", got)
+	}
+
+	var payload translateResult
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode translate response: %v", err)
+	}
+	if !payload.OK {
+		t.Fatalf("expected translate response OK to be true")
+	}
+	if payload.Output != "你好，世界" {
+		t.Fatalf("unexpected translate output %q", payload.Output)
+	}
+	if payload.MessageCode != statusCodeTranslationCompleted {
+		t.Fatalf("expected translation completed code, got %q", payload.MessageCode)
+	}
+	if payload.History == nil || payload.History.Input != "Hello world" || payload.History.Output != "你好，世界" {
+		t.Fatalf("expected history payload to be included, got %#v", payload.History)
+	}
+	if payload.Count != 1 {
+		t.Fatalf("expected count 1 after translate, got %d", payload.Count)
+	}
+}
+
+func TestTranslateStreamAcceptsJSONPayload(t *testing.T) {
+	s := newTestServer(t)
+	s.translator = fakeTranslator{
+		streamFn: func(ctx context.Context, req translate.Request, onDelta func(string) error, onProgress func(translate.ProgressUpdate) error) (string, error) {
+			if req.SourceLang != "ja" || req.TargetLang != "en" {
+				t.Fatalf("unexpected request languages: %#v", req)
+			}
+			if req.Text != "こんにちは" {
+				t.Fatalf("unexpected request text: %#v", req)
+			}
+			if err := onDelta("Hello"); err != nil {
+				return "", err
+			}
+			return "Hello", nil
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/translate/stream", strings.NewReader(`{"source_lang":"ja","target_lang":"en","text":"こんにちは"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"type":"delta","delta":"Hello"`) {
+		t.Fatalf("expected stream response to include translated delta, got: %s", body)
+	}
+	if !strings.Contains(body, `"type":"done"`) {
+		t.Fatalf("expected stream response to include done event, got: %s", body)
+	}
+}
+
+func TestTranslateAPIOptionsPreflightAllowsExternalCall(t *testing.T) {
+	s := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/translate", nil)
+	req.Header.Set("Origin", "https://example.com")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	req.Header.Set("Access-Control-Request-Headers", "content-type,x-client")
+	req.Header.Set("Access-Control-Request-Private-Network", "true")
+	rec := httptest.NewRecorder()
+	s.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("expected wildcard CORS header, got %q", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(got, "POST") {
+		t.Fatalf("expected POST in allowed methods, got %q", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Headers"); got != "content-type,x-client" {
+		t.Fatalf("expected requested headers to be echoed, got %q", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Private-Network"); got != "true" {
+		t.Fatalf("expected private network header to be allowed, got %q", got)
+	}
+}
+
+func TestModelEndpointsRemainNonCORSAccessible(t *testing.T) {
+	s := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/models/activate", nil)
+	req.Header.Set("Origin", "https://example.com")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	rec := httptest.NewRecorder()
+	s.routes().ServeHTTP(rec, req)
+
+	if rec.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Fatalf("expected model endpoints to remain without public CORS headers")
 	}
 }

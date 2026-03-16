@@ -33,6 +33,7 @@ type runtimeController interface {
 	SetBackendURL(string)
 	SetPreferredModelPath(string)
 	CurrentBackendURL() string
+	RuntimeStatus() runtime.Status
 	Stop() error
 	EnsureRunningWithProgress(func(lf.Progress)) (runtime.Status, error)
 }

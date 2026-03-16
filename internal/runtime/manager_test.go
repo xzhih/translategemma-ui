@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -42,5 +44,56 @@ func TestResolveLaunchBackendURLSwitchesWhenPortOccupied(t *testing.T) {
 	}
 	if resolved == NormalizeBackendURL(occupiedURL) {
 		t.Fatalf("expected a different backend URL than %q", occupiedURL)
+	}
+}
+
+func TestResolveLaunchBackendURLSwitchesWhenPortResponds(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("hello"))
+	}))
+	defer server.Close()
+
+	resolved, switched, err := ResolveLaunchBackendURL(server.URL)
+	if err != nil {
+		t.Fatalf("ResolveLaunchBackendURL returned error: %v", err)
+	}
+	if !switched {
+		t.Fatalf("expected responding port to trigger a switch")
+	}
+	if resolved == NormalizeBackendURL(server.URL) {
+		t.Fatalf("expected a different backend URL than %q", server.URL)
+	}
+}
+
+func TestProbeBackendRejectsRootOnlyServer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	if status := ProbeBackend(server.URL); status.Ready {
+		t.Fatalf("expected root-only server to be ignored, got %#v", status)
+	}
+}
+
+func TestProbeBackendAcceptsModelsEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"data":[]}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	if status := ProbeBackend(server.URL); !status.Ready {
+		t.Fatalf("expected OpenAI-compatible endpoint to be accepted, got %#v", status)
 	}
 }

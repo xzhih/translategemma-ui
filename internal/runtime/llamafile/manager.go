@@ -69,6 +69,13 @@ func (m *Manager) CurrentBackendURL() string {
 	return m.BackendURL
 }
 
+// RuntimeStatus reports whether a managed runtime process recorded by this app is reachable.
+func (m *Manager) RuntimeStatus() runtime.Status {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.runtimeStatusLocked()
+}
+
 // SetPreferredModelPath sets the exact packaged runtime path to launch first.
 func (m *Manager) SetPreferredModelPath(path string) {
 	m.cfgMu.Lock()
@@ -80,14 +87,17 @@ func (m *Manager) SetPreferredModelPath(path string) {
 func (m *Manager) Stop() error {
 	m.mu.Lock()
 	var proc *os.Process
+	pid := 0
 	if m.cmd != nil && m.cmd.Process != nil {
 		proc = m.cmd.Process
+		pid = proc.Pid
 		m.cmd = nil
 	}
 	m.mu.Unlock()
 
 	if proc == nil {
-		pid, err := m.readManagedPID()
+		var err error
+		pid, err = m.readManagedPID()
 		if err != nil || pid <= 0 {
 			return nil
 		}
@@ -105,13 +115,8 @@ func (m *Manager) Stop() error {
 	m.clearOwnedPID()
 	_ = os.Remove(m.PidFile)
 
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		backendURL := m.CurrentBackendURL()
-		if !runtime.ProbeBackend(backendURL).Ready {
-			return nil
-		}
-		time.Sleep(100 * time.Millisecond)
+	if waitManagedProcessExit(pid, 5*time.Second) {
+		return nil
 	}
 	return nil
 }
@@ -121,6 +126,7 @@ func (m *Manager) StopOwned() error {
 	m.mu.Lock()
 	ownedPID := m.ownedPID
 	var proc *os.Process
+	pid := ownedPID
 	if ownedPID <= 0 {
 		m.mu.Unlock()
 		return nil
@@ -132,7 +138,8 @@ func (m *Manager) StopOwned() error {
 	m.mu.Unlock()
 
 	if proc == nil {
-		pid, err := m.readManagedPID()
+		var err error
+		pid, err = m.readManagedPID()
 		if err != nil || pid <= 0 || pid != ownedPID {
 			m.clearOwnedPID()
 			return nil
@@ -153,13 +160,8 @@ func (m *Manager) StopOwned() error {
 	m.clearOwnedPID()
 	_ = os.Remove(m.PidFile)
 
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		backendURL := m.CurrentBackendURL()
-		if !runtime.ProbeBackend(backendURL).Ready {
-			return nil
-		}
-		time.Sleep(100 * time.Millisecond)
+	if waitManagedProcessExit(pid, 5*time.Second) {
+		return nil
 	}
 	return nil
 }
@@ -173,7 +175,7 @@ func (m *Manager) EnsureRunning() (runtime.Status, error) {
 func (m *Manager) EnsureRunningWithProgress(onProgress func(Progress)) (runtime.Status, error) {
 	reportProgress(onProgress, Progress{Stage: "load", Percent: 0, Message: "Checking runtime status"})
 	backendURL := m.CurrentBackendURL()
-	if status := runtime.ProbeBackend(backendURL); status.Ready {
+	if status := m.RuntimeStatus(); status.Ready {
 		reportProgress(onProgress, Progress{Stage: "load", Percent: 100, Message: "Runtime already ready"})
 		return status, nil
 	}
@@ -181,7 +183,7 @@ func (m *Manager) EnsureRunningWithProgress(onProgress func(Progress)) (runtime.
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	backendURL = m.CurrentBackendURL()
-	if status := runtime.ProbeBackend(backendURL); status.Ready {
+	if status := m.runtimeStatusLocked(); status.Ready {
 		reportProgress(onProgress, Progress{Stage: "load", Percent: 100, Message: "Runtime already ready"})
 		return status, nil
 	}
@@ -346,6 +348,51 @@ func (m *Manager) readManagedPID() (int, error) {
 		return 0, err
 	}
 	return pid, nil
+}
+
+func (m *Manager) runtimeStatusLocked() runtime.Status {
+	pid, fromPIDFile := m.managedPIDLocked()
+	if pid <= 0 {
+		return runtime.Status{Ready: false, Message: "managed runtime is not running"}
+	}
+	if !managedProcessAlive(pid) {
+		m.clearManagedReferenceLocked(pid, fromPIDFile)
+		return runtime.Status{Ready: false, Message: "managed runtime is not running"}
+	}
+	status := runtime.ProbeBackend(m.CurrentBackendURL())
+	if status.Ready {
+		return status
+	}
+	return runtime.Status{
+		Ready:   false,
+		Message: fmt.Sprintf("managed runtime process %d is running but backend is not ready at %s", pid, m.CurrentBackendURL()),
+	}
+}
+
+func (m *Manager) managedPIDLocked() (int, bool) {
+	if m.cmd != nil && m.cmd.Process != nil {
+		return m.cmd.Process.Pid, false
+	}
+	if m.ownedPID > 0 {
+		return m.ownedPID, false
+	}
+	pid, err := m.readManagedPID()
+	if err != nil || pid <= 0 {
+		return 0, false
+	}
+	return pid, true
+}
+
+func (m *Manager) clearManagedReferenceLocked(pid int, fromPIDFile bool) {
+	if m.cmd != nil && m.cmd.Process != nil && m.cmd.Process.Pid == pid {
+		m.cmd = nil
+	}
+	if m.ownedPID == pid {
+		m.ownedPID = 0
+	}
+	if fromPIDFile {
+		_ = os.Remove(m.PidFile)
+	}
 }
 
 func fileExists(path string) bool {

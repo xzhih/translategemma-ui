@@ -469,11 +469,18 @@ func (s Service) translateStreamWithContext(
 		return segmentTranslation{}, fmt.Errorf("backend returned %s: %s", resp.Status, strings.TrimSpace(string(respBody)))
 	}
 
+	reader := bufio.NewReader(resp.Body)
+	peeked, _ := reader.Peek(64)
+	trimmedPeek := bytes.TrimSpace(peeked)
+	if len(trimmedPeek) > 0 && (trimmedPeek[0] == '{' || trimmedPeek[0] == '[') {
+		return s.translateStreamJSONFallback(reader, onDelta)
+	}
+
 	var (
 		full         strings.Builder
 		finishReason string
 	)
-	scanner := bufio.NewScanner(resp.Body)
+	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -528,6 +535,36 @@ func (s Service) translateStreamWithContext(
 	return segmentTranslation{
 		Output:       output,
 		FinishReason: finishReason,
+	}, nil
+}
+
+func (s Service) translateStreamJSONFallback(body io.Reader, onDelta func(string) error) (segmentTranslation, error) {
+	respBody, err := io.ReadAll(body)
+	if err != nil {
+		return segmentTranslation{}, err
+	}
+
+	var parsed chatCompletionResponse
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return segmentTranslation{}, fmt.Errorf("decode backend response: %w", err)
+	}
+
+	choice, err := firstChoice(parsed)
+	if err != nil {
+		return segmentTranslation{}, err
+	}
+	output := normalizeResponseText(choice.Message.Content)
+	if output == "" && !isLengthFinishReason(choice.FinishReason) {
+		return segmentTranslation{}, fmt.Errorf("translation output is empty")
+	}
+	if output != "" && onDelta != nil {
+		if err := onDelta(output); err != nil {
+			return segmentTranslation{}, err
+		}
+	}
+	return segmentTranslation{
+		Output:       output,
+		FinishReason: choice.FinishReason,
 	}, nil
 }
 

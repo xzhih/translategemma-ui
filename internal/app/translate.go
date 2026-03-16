@@ -14,7 +14,6 @@ import (
 	"translategemma-ui/internal/huggingface"
 	"translategemma-ui/internal/models"
 	"translategemma-ui/internal/modelstore"
-	"translategemma-ui/internal/runtime"
 	lf "translategemma-ui/internal/runtime/llamafile"
 	"translategemma-ui/internal/runtimeutil"
 	"translategemma-ui/internal/translate"
@@ -160,8 +159,8 @@ func prepareTranslationRuntime(requestedModelID string, requireVision bool) (str
 		return "", nil, models.QuantizedModel{}, nil, err
 	}
 
-	probe := runtime.ProbeBackend(backendURL)
-	if !runtimeutil.CanReuseLoadedRuntime(modelPath, previousActiveModelPath, probe.Ready) {
+	status := manager.RuntimeStatus()
+	if !runtimeutil.CanReuseLoadedRuntime(modelPath, previousActiveModelPath, status.Ready) {
 		_ = manager.Stop()
 		if _, err := manager.EnsureRunningWithProgress(nil); err != nil {
 			return "", nil, models.QuantizedModel{}, nil, err

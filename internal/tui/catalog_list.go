@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"translategemma-ui/internal/models"
 	"translategemma-ui/internal/modelstore"
 )
 
@@ -59,7 +60,7 @@ func newRuntimeCatalogList() list.Model {
 	catalogList.SetStatusBarItemName("runtime", "runtimes")
 	catalogList.Styles.StatusBar = mutedStyle.Copy().Padding(0, 1, 0, 0)
 	catalogList.Styles.PaginationStyle = mutedStyle.Copy()
-	catalogList.Styles.NoItems = mutedStyle.Copy()
+	catalogList.Styles.NoItems = mutedStyle.Copy().Italic(true)
 	return catalogList
 }
 
@@ -71,7 +72,7 @@ func newRuntimeListDelegate() runtimeListDelegate {
 		metaSelectedStyle:  lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
 		badgeStyle: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("252")).
-			Background(lipgloss.Color("238")).
+			Background(colorSurfaceAlt).
 			Padding(0, 1),
 		selectedBadgeStyle: lipgloss.NewStyle().
 			Bold(true).
@@ -138,10 +139,14 @@ func (d runtimeListDelegate) Render(w io.Writer, m list.Model, index int, item l
 }
 
 func (i runtimeListItem) summary() string {
-	if i.item.Installed {
-		return "ready locally"
+	mode := "text"
+	if models.SupportsVision(i.item.QuantizedModel) {
+		mode = "text + image"
 	}
-	return "download required"
+	if i.item.Installed {
+		return fmt.Sprintf("%s | cached locally", mode)
+	}
+	return fmt.Sprintf("%s | download on demand", mode)
 }
 
 func (i runtimeListItem) badges() []string {

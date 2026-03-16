@@ -72,7 +72,7 @@ func newServer(modelID, dataRoot string) (*Server, error) {
 		_ = config.SaveAppConfig(dataRoot, s.cfg)
 	}
 
-	if probe := s.probeBackend(backendURL); probe.Ready {
+	if status := s.runtimeManager.RuntimeStatus(); status.Ready {
 		s.setStatusCode(statusCodeRuntimeReady, "Runtime ready")
 		return s, nil
 	}
@@ -117,6 +117,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/model", s.handleModel)
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/api/bootstrap", s.handleBootstrap)
+	mux.HandleFunc("/api/translate", s.handleTranslateAPI)
 	mux.HandleFunc("/api/translate/stream", s.handleTranslateStream)
 	mux.HandleFunc("/api/translate/image", s.handleImageTranslate)
 	mux.HandleFunc("/api/models/install", s.handleModelInstall)
@@ -125,7 +126,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/models/enable-vision", s.handleEnableVision)
 	mux.HandleFunc("/api/history/delete", s.handleHistoryDelete)
 	mux.HandleFunc("/api/history/clear", s.handleHistoryClear)
-	return mux
+	return withTranslationAPIAccess(mux)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {

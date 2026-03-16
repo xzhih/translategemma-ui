@@ -11,6 +11,20 @@ TranslateGemmaUI is a local TranslateGemma app with:
 
 The app downloads packaged TranslateGemma runtimes from Hugging Face on demand and stores them under the user data directory. End users do not need Go or Bun if they install from GitHub Releases or Homebrew.
 
+## Screenshots
+
+### Web UI
+
+Local text and image translation in the embedded browser interface.
+
+![TranslateGemmaUI Web UI](docs/screenshots/webui-main.png)
+
+### TUI
+
+Keyboard-first translation workflow powered by Bubble Tea.
+
+![TranslateGemmaUI TUI](docs/screenshots/tui-main.png)
+
 ## Platform Support
 
 Release binaries are published for:
@@ -57,6 +71,12 @@ translategemma-ui --webui
 
 Open [http://127.0.0.1:8090](http://127.0.0.1:8090).
 
+To let another local app or a different frontend call the service, keep the server running and point it at the same listen address. If you need access from another device on your LAN, start it with:
+
+```bash
+translategemma-ui --webui --listen 0.0.0.0:8090
+```
+
 ### Run the TUI
 
 ```bash
@@ -93,6 +113,70 @@ translategemma-ui translate image \
   --file /path/to/image.png \
   --model-id q8_0_vision
 ```
+
+## External Translation API
+
+TranslateGemmaUI now exposes a JSON text translation API that can be used by third-party apps, browser UIs, or automation scripts.
+
+Base URL when running locally:
+
+- `http://127.0.0.1:8090`
+
+Available endpoints:
+
+- `POST /api/translate` for single-shot JSON text translation
+- `POST /api/translate/stream` for streaming NDJSON text translation
+- `POST /api/translate/image` for multipart image translation
+- `GET /healthz` for a simple health check
+
+`/api/translate*` and `/healthz` send permissive CORS headers and answer `OPTIONS` preflight requests, so browser-based clients from another origin can call them directly.
+
+Example JSON translation request:
+
+```bash
+curl http://127.0.0.1:8090/api/translate \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "source_lang": "en",
+    "target_lang": "zh-CN",
+    "input_text": "Hello world",
+    "translation_instruction": "Use concise UI wording."
+  }'
+```
+
+Example response:
+
+```json
+{
+  "ok": true,
+  "output": "你好，世界",
+  "message": "Translation completed",
+  "messageCode": "translation_completed",
+  "history": {
+    "id": 1,
+    "source": "en",
+    "target": "zh-CN",
+    "input": "Hello world",
+    "output": "你好，世界",
+    "when": "09:27:54"
+  },
+  "count": 1
+}
+```
+
+Example streaming request:
+
+```bash
+curl http://127.0.0.1:8090/api/translate/stream \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "source_lang": "ja",
+    "target_lang": "en",
+    "text": "こんにちは"
+  }'
+```
+
+The streaming endpoint returns newline-delimited JSON events with `status`, `progress`, `delta`, `error`, and `done` event types.
 
 ## Runtime Model Source
 

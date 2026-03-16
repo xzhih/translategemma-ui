@@ -279,8 +279,8 @@ func (s *Server) activateModel(item models.QuantizedModel, emit func(streamEvent
 		_ = emit(streamEvent{Type: "progress", Stage: "load", Message: "Preparing active model", MessageCode: statusCodePreparingActiveModel, Percent: 5})
 	}
 
-	probe := s.probeBackend(s.backendURL)
-	if runtimeutil.CanReuseLoadedRuntime(modelPath, s.state.ActiveModelPath, probe.Ready) {
+	status := s.runtimeManager.RuntimeStatus()
+	if runtimeutil.CanReuseLoadedRuntime(modelPath, s.state.ActiveModelPath, status.Ready) {
 		if err := s.applyActiveModelState(item, modelPath); err != nil {
 			if emit != nil {
 				_ = emit(streamEvent{Type: "error", Stage: "save", Message: err.Error()})
@@ -374,9 +374,9 @@ func (s *Server) applyLoadedState() {
 }
 
 func (s *Server) ensureRuntime(onProgress func(lf.Progress)) (runtime.Status, error) {
-	if probe := s.probeBackend(s.backendURL); probe.Ready {
+	if status := s.runtimeManager.RuntimeStatus(); status.Ready {
 		s.syncBackendURL(s.runtimeManager.CurrentBackendURL(), false)
-		return probe, nil
+		return status, nil
 	}
 	if !s.hasInstalledModel() {
 		return runtime.Status{Ready: false, Message: errNoLocalModel.Error()}, errNoLocalModel
@@ -430,8 +430,8 @@ func (s *Server) visionEnabled() bool {
 }
 
 func (s *Server) runtimeView() (bool, uiStatus) {
-	probe := s.probeBackend(s.backendURL)
-	if probe.Ready {
+	status := s.runtimeManager.RuntimeStatus()
+	if status.Ready {
 		return true, makeRuntimeStatus(statusCodeRuntimeReady, "Runtime ready")
 	}
 	if !s.hasInstalledModel() {

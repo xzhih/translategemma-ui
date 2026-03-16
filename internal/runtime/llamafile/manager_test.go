@@ -2,6 +2,8 @@ package llamafile
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -175,6 +177,47 @@ func TestStopOwnedKillsChildProcessGroup(t *testing.T) {
 		return
 	}
 	t.Fatalf("expected child process %d to be terminated with its process group", childPID)
+}
+
+func TestRuntimeStatusIgnoresReachableUnmanagedBackend(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models", "/healthz":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	m := NewManager(t.TempDir(), server.URL)
+	if status := m.RuntimeStatus(); status.Ready {
+		t.Fatalf("expected unmanaged backend to be ignored, got %#v", status)
+	}
+}
+
+func TestRuntimeStatusAcceptsManagedBackend(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models", "/healthz":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	dataRoot := t.TempDir()
+	m := NewManager(dataRoot, server.URL)
+	if err := os.WriteFile(m.PidFile, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o644); err != nil {
+		t.Fatalf("write pid file: %v", err)
+	}
+
+	if status := m.RuntimeStatus(); !status.Ready {
+		t.Fatalf("expected managed backend to be accepted, got %#v", status)
+	}
 }
 
 func waitForUnixProcessExit(pid int, timeout time.Duration) bool {

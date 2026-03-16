@@ -112,9 +112,12 @@ func startInstallModelCmd(dataRoot string, selected models.QuantizedModel, runti
 		_ = sendTaskMsg(ctx, out, provisionProgressMsg{Stage: "download", Percent: 0, Message: "Downloading model"})
 		modelPath, err := huggingface.DownloadModelWithContext(ctx, dataRoot, selected, func(p huggingface.DownloadProgress) {
 			_ = sendTaskMsg(ctx, out, provisionProgressMsg{
-				Stage:   "download",
-				Percent: p.Percent,
-				Message: p.Message,
+				Stage:            "download",
+				Percent:          p.Percent,
+				Downloaded:       p.Downloaded,
+				Total:            p.Total,
+				SpeedBytesPerSec: p.SpeedBytesPerSec,
+				Message:          p.Message,
 			})
 		})
 		if err != nil {

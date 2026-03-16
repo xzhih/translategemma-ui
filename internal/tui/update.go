@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -11,10 +12,11 @@ import (
 
 	"translategemma-ui/internal/config"
 	"translategemma-ui/internal/languages"
-	"translategemma-ui/internal/runtime"
 	"translategemma-ui/internal/runtimeutil"
 	"translategemma-ui/internal/translate"
 )
+
+var writeClipboard = clipboard.WriteAll
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -63,17 +65,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.syncOutputViewport()
 		return m, nil
 	case streamErrMsg:
-		m.runtimeReady = runtime.ProbeBackend(m.backendURL).Ready
+		m.runtimeReady = m.runtime.RuntimeStatus().Ready
 		m.streaming = false
 		m.releaseTask(streamTaskKind)
 		_ = m.syncCatalogList()
 		m.status = msg.Message
+		if strings.TrimSpace(m.output) == "" {
+			m.output = "Error: " + msg.Message
+		} else {
+			m.output = strings.TrimRight(m.output, "\n") + "\n\nError: " + msg.Message
+		}
+		m.syncOutputViewport()
 		return m, nil
 	case provisionProgressMsg:
 		cmds := []tea.Cmd{waitForTaskCmd(provisionTaskKind, m.workTask)}
 		m.provisionStage = msg.Stage
 		if msg.Stage == "download" {
 			m.downloadPercent = msg.Percent
+			m.downloadedBytes = msg.Downloaded
+			m.downloadTotal = msg.Total
+			m.downloadSpeed = msg.SpeedBytesPerSec
 			if msg.Percent >= 0 {
 				cmds = append(cmds, m.downloadBar.SetPercent(msg.Percent/100))
 			}
@@ -94,6 +105,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screen = translateScreen
 		m.provisionStage = ""
 		m.downloadPercent = 100
+		m.downloadSpeed = 0
 		m.loadPercent = 100
 		m.status = msg.Message
 		m.releaseTask(provisionTaskKind)
@@ -110,12 +122,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		req := *m.pendingRequest
 		m.pendingRequest = nil
 		m.output = ""
-		m.syncOutputViewport()
 		m.status = "Streaming translation..."
 		m.streaming = true
+		m.syncOutputViewport()
 		return m, tea.Batch(focusCmd, startStreamCmd(req, m.service), m.activity.Tick)
 	case provisionErrMsg:
-		m.runtimeReady = runtime.ProbeBackend(m.backendURL).Ready
+		m.runtimeReady = m.runtime.RuntimeStatus().Ready
 		if m.pendingRequest != nil {
 			m.screen = translateScreen
 		} else {
@@ -123,6 +135,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.provisionStage = ""
 		m.downloadPercent = -1
+		m.downloadedBytes = 0
+		m.downloadTotal = 0
+		m.downloadSpeed = 0
 		m.loadPercent = -1
 		m.pendingRequest = nil
 		m.cancelTask(provisionTaskKind)
@@ -219,13 +234,16 @@ func (m model) updateModelScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cfg.ActiveModelID = selected.ID
 		_ = config.SaveAppConfig(m.dataRoot, m.cfg)
 		m.syncBackendURL(m.runtime.CurrentBackendURL(), false)
-		probe := runtime.ProbeBackend(m.backendURL)
-		m.runtimeReady = probe.Ready
+		status := m.runtime.RuntimeStatus()
+		m.runtimeReady = status.Ready
 		_ = m.syncCatalogList()
-		if selectedItem.Installed && runtimeutil.CanReuseLoadedRuntime(selectedItem.Path, m.state.ActiveModelPath, probe.Ready) {
+		if selectedItem.Installed && runtimeutil.CanReuseLoadedRuntime(selectedItem.Path, m.state.ActiveModelPath, status.Ready) {
 			m.screen = translateScreen
 			m.provisionStage = ""
 			m.downloadPercent = -1
+			m.downloadedBytes = 0
+			m.downloadTotal = 0
+			m.downloadSpeed = 0
 			m.loadPercent = -1
 			focusCmd := m.setFocus(textFocus)
 			m.status = fmt.Sprintf("Runtime already loaded: %s", selected.FileName)
@@ -235,6 +253,9 @@ func (m model) updateModelScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.screen = provisionScreen
 		m.provisionStage = ""
 		m.downloadPercent = -1
+		m.downloadedBytes = 0
+		m.downloadTotal = 0
+		m.downloadSpeed = 0
 		m.loadPercent = 0
 		if localPath := m.localModelPath(selected.FileName); localPath != "" {
 			m.provisionStage = "load"
@@ -245,6 +266,9 @@ func (m model) updateModelScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		m.status = "Installing selected model..."
 		m.downloadPercent = 0
+		m.downloadedBytes = 0
+		m.downloadTotal = 0
+		m.downloadSpeed = 0
 		m.loadPercent = 0
 		m.runtimeReady = false
 		return m, tea.Batch(startInstallModelCmd(m.dataRoot, selected, m.runtime, m.state), m.activity.Tick)
@@ -288,6 +312,40 @@ func (m model) updateTranslateScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 		m.sourceLang, m.targetLang = m.targetLang, m.sourceLang
 		m.status = fmt.Sprintf("Languages swapped: %s -> %s", languages.Label(m.sourceLang), languages.Label(m.targetLang))
 		return m, nil, true
+	case key.Matches(msg, m.keys.Copy) && m.focus == outputFocus:
+		output := strings.TrimSpace(m.output)
+		if output == "" {
+			m.status = "Translation output is empty"
+			return m, nil, true
+		}
+		if err := writeClipboard(output); err != nil {
+			m.status = fmt.Sprintf("Copy failed: %v", err)
+			return m, nil, true
+		}
+		m.status = "Translation copied to clipboard"
+		return m, nil, true
+	case key.Matches(msg, m.keys.ClearInput):
+		if strings.TrimSpace(m.input.Value()) == "" {
+			m.status = "Source text is already empty"
+			return m, nil, true
+		}
+		m.input.SetValue("")
+		m.status = "Source text cleared"
+		return m, nil, true
+	case key.Matches(msg, m.keys.Clear):
+		switch m.focus {
+		case instructionFocus:
+			m.instruction.SetValue("")
+			m.status = "Instruction cleared"
+		case outputFocus:
+			m.output = ""
+			m.syncOutputViewport()
+			m.status = "Translation output cleared"
+		default:
+			m.input.SetValue("")
+			m.status = "Source text cleared"
+		}
+		return m, nil, true
 	case key.Matches(msg, m.keys.Run):
 		if m.streaming {
 			return m, nil, true
@@ -298,15 +356,15 @@ func (m model) updateTranslateScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 			return m, nil, true
 		}
 		m.syncBackendURL(m.runtime.CurrentBackendURL(), false)
-		probe := runtime.ProbeBackend(m.backendURL)
-		m.runtimeReady = probe.Ready
+		status := m.runtime.RuntimeStatus()
+		m.runtimeReady = status.Ready
 		streamReq := translate.Request{
 			SourceLang:             m.sourceLang,
 			TargetLang:             m.targetLang,
 			Text:                   text,
 			TranslationInstruction: strings.TrimSpace(m.instruction.Value()),
 		}
-		if !probe.Ready {
+		if !status.Ready {
 			modelPath := m.resolveActiveRuntimePath()
 			if modelPath == "" {
 				m.status = "No local runtime detected. Choose a model to install."
@@ -317,6 +375,9 @@ func (m model) updateTranslateScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 			m.screen = provisionScreen
 			m.provisionStage = "load"
 			m.downloadPercent = -1
+			m.downloadedBytes = 0
+			m.downloadTotal = 0
+			m.downloadSpeed = 0
 			m.loadPercent = 0
 			m.output = ""
 			m.syncOutputViewport()
@@ -325,9 +386,9 @@ func (m model) updateTranslateScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 		}
 		m.cancelTask(streamTaskKind)
 		m.output = ""
-		m.syncOutputViewport()
 		m.status = "Streaming translation..."
 		m.streaming = true
+		m.syncOutputViewport()
 		return m, tea.Batch(startStreamCmd(streamReq, m.service), m.activity.Tick), true
 	case key.Matches(msg, m.keys.FocusNext):
 		return m, m.rotateFocus(1), true

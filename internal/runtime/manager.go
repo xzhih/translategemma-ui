@@ -79,19 +79,25 @@ func CanBindBackendPort(host, port string) bool {
 	return true
 }
 
+// PortResponds reports whether a local TCP service is already accepting connections on host:port.
+func PortResponds(host, port string) bool {
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), 250*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
+}
+
 // ResolveLaunchBackendURL returns a backend URL that can be used for a new runtime.
-// If the preferred URL is already serving a compatible backend, it is reused.
-// If the preferred port is occupied by something else, the next available port is chosen.
+// If the preferred port is occupied, the next available port is chosen.
 func ResolveLaunchBackendURL(raw string) (string, bool, error) {
 	preferred := NormalizeBackendURL(raw)
 	host, port, err := BackendAddress(preferred)
 	if err != nil {
 		return "", false, err
 	}
-	if ProbeBackend(preferred).Ready {
-		return preferred, false, nil
-	}
-	if CanBindBackendPort(host, port) {
+	if !PortResponds(host, port) && CanBindBackendPort(host, port) {
 		return preferred, false, nil
 	}
 	startPort, err := strconv.Atoi(port)
@@ -100,7 +106,7 @@ func ResolveLaunchBackendURL(raw string) (string, bool, error) {
 	}
 	for offset := 1; offset <= 100; offset++ {
 		candidatePort := strconv.Itoa(startPort + offset)
-		if !CanBindBackendPort(host, candidatePort) {
+		if PortResponds(host, candidatePort) || !CanBindBackendPort(host, candidatePort) {
 			continue
 		}
 		return JoinBackendURL(host, candidatePort), true, nil
@@ -121,7 +127,6 @@ func ProbeBackend(raw string) Status {
 	endpoints := []probe{
 		{Endpoint: "/v1/models", MinCode: 200, MaxCode: 299},
 		{Endpoint: "/healthz", MinCode: 200, MaxCode: 299},
-		{Endpoint: "/", MinCode: 200, MaxCode: 299},
 	}
 	for _, ep := range endpoints {
 		req, err := http.NewRequest(http.MethodGet, base+ep.Endpoint, nil)

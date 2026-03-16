@@ -1,7 +1,9 @@
 package translate
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -290,5 +292,79 @@ func TestTranslateReturnsErrorWhenSmallChunkStillHitsLengthLimit(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "still exceeds the output limit") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestStreamTranslateFallsBackToJSONResponse(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/tokenize":
+			_, _ = w.Write([]byte(`{"tokens":[1,2,3]}`))
+		case "/v1/translate":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"你好"}}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	svc := NewService(ts.URL)
+	var deltas []string
+	out, err := svc.StreamTranslateWithContextAndProgress(
+		context.Background(),
+		Request{Text: "hello", SourceLang: "en", TargetLang: "zh-CN"},
+		func(delta string) error {
+			deltas = append(deltas, delta)
+			return nil
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("StreamTranslateWithContextAndProgress returned error: %v", err)
+	}
+	if out != "你好" {
+		t.Fatalf("expected JSON fallback output %q, got %q", "你好", out)
+	}
+	if len(deltas) != 1 || deltas[0] != "你好" {
+		t.Fatalf("expected JSON fallback to emit one delta, got %#v", deltas)
+	}
+}
+
+func TestStreamTranslateReadsEventStreamResponse(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/tokenize":
+			_, _ = w.Write([]byte(`{"tokens":[1,2,3]}`))
+		case "/v1/translate":
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"你\"}}]}\n\n")
+			_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"好\"},\"finish_reason\":\"stop\"}]}\n\n")
+			_, _ = io.WriteString(w, "data: [DONE]\n\n")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	svc := NewService(ts.URL)
+	var deltas []string
+	out, err := svc.StreamTranslateWithContextAndProgress(
+		context.Background(),
+		Request{Text: "hello", SourceLang: "en", TargetLang: "zh-CN"},
+		func(delta string) error {
+			deltas = append(deltas, delta)
+			return nil
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("StreamTranslateWithContextAndProgress returned error: %v", err)
+	}
+	if out != "你好" {
+		t.Fatalf("expected streamed output %q, got %q", "你好", out)
+	}
+	if strings.Join(deltas, "") != "你好" {
+		t.Fatalf("expected streamed deltas to form output, got %#v", deltas)
 	}
 }

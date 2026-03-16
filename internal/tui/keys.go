@@ -3,20 +3,23 @@ package tui
 import "github.com/charmbracelet/bubbles/key"
 
 type keyMap struct {
-	Quit      key.Binding
-	QuitAlt   key.Binding
-	Back      key.Binding
-	Confirm   key.Binding
-	MoveUp    key.Binding
-	MoveDown  key.Binding
-	FocusNext key.Binding
-	FocusPrev key.Binding
-	Run       key.Binding
-	Swap      key.Binding
-	PageUp    key.Binding
-	PageDown  key.Binding
-	Top       key.Binding
-	Bottom    key.Binding
+	Quit       key.Binding
+	QuitAlt    key.Binding
+	Back       key.Binding
+	Confirm    key.Binding
+	Copy       key.Binding
+	ClearInput key.Binding
+	Clear      key.Binding
+	MoveUp     key.Binding
+	MoveDown   key.Binding
+	FocusNext  key.Binding
+	FocusPrev  key.Binding
+	Run        key.Binding
+	Swap       key.Binding
+	PageUp     key.Binding
+	PageDown   key.Binding
+	Top        key.Binding
+	Bottom     key.Binding
 }
 
 func defaultKeyMap() keyMap {
@@ -36,6 +39,18 @@ func defaultKeyMap() keyMap {
 		Confirm: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "confirm"),
+		),
+		Copy: key.NewBinding(
+			key.WithKeys("y"),
+			key.WithHelp("y", "copy"),
+		),
+		ClearInput: key.NewBinding(
+			key.WithKeys("ctrl+k"),
+			key.WithHelp("ctrl+k", "clear input"),
+		),
+		Clear: key.NewBinding(
+			key.WithKeys("ctrl+l"),
+			key.WithHelp("ctrl+l", "clear"),
 		),
 		MoveUp: key.NewBinding(
 			key.WithKeys("up", "k"),
@@ -89,11 +104,11 @@ func (m model) shortHelpBindings() []key.Binding {
 	case translateScreen:
 		switch m.focus {
 		case sourceFocus, targetFocus:
-			return []key.Binding{m.keys.FocusNext, m.keys.MoveUp, m.keys.Swap, m.keys.Back, m.keys.Quit}
+			return []key.Binding{m.keys.FocusNext, m.keys.MoveUp, m.keys.Swap, m.keys.ClearInput, m.keys.Back, m.keys.Quit}
 		case outputFocus:
-			return []key.Binding{m.keys.FocusNext, m.keys.MoveUp, m.keys.PageDown, m.keys.Top, m.keys.Back, m.keys.Quit}
+			return []key.Binding{m.keys.FocusNext, m.keys.MoveUp, m.keys.PageDown, m.keys.Copy, m.keys.ClearInput, m.keys.Back}
 		default:
-			return []key.Binding{m.keys.FocusNext, m.keys.Run, m.keys.Swap, m.keys.Back, m.keys.Quit}
+			return []key.Binding{m.keys.FocusNext, m.keys.Run, m.keys.Swap, m.keys.ClearInput, m.keys.Back, m.keys.Quit}
 		}
 	}
 	return []key.Binding{m.keys.Quit}

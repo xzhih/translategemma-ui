@@ -18,7 +18,6 @@ import (
 	"translategemma-ui/internal/languages"
 	"translategemma-ui/internal/models"
 	"translategemma-ui/internal/modelstore"
-	"translategemma-ui/internal/runtime"
 	lf "translategemma-ui/internal/runtime/llamafile"
 	"translategemma-ui/internal/runtimeutil"
 	"translategemma-ui/internal/translate"
@@ -83,6 +82,9 @@ type model struct {
 	workTask   *taskState
 
 	downloadPercent float64
+	downloadedBytes int64
+	downloadTotal   int64
+	downloadSpeed   float64
 	loadPercent     float64
 	provisionStage  string
 }
@@ -100,9 +102,12 @@ type streamErrMsg struct {
 }
 
 type provisionProgressMsg struct {
-	Stage   string
-	Percent float64
-	Message string
+	Stage            string
+	Percent          float64
+	Downloaded       int64
+	Total            int64
+	SpeedBytesPerSec float64
+	Message          string
 }
 
 type provisionDoneMsg struct {
@@ -134,8 +139,9 @@ func Run(preselectedModelID, dataRoot string) error {
 }
 
 func newModel(preselectedModelID, dataRoot string) model {
-	in := newTextarea("Paste text to translate", 4000, 8)
-	instruction := newTextarea("Optional translation instruction", 280, 4)
+	in := newTextarea("Source text", 4000, 8)
+	in.ShowLineNumbers = true
+	instruction := newTextarea("Optional instruction", 280, 4)
 	instruction.Blur()
 
 	all := huggingface.ListTranslateGemmaModels()
@@ -185,8 +191,8 @@ func newModel(preselectedModelID, dataRoot string) model {
 		runtime:         lf.NewManager(dataRoot, backendURL),
 		backendURL:      backendURL,
 		dataRoot:        dataRoot,
-		windowWidth:     110,
-		windowHeight:    34,
+		windowWidth:     80,
+		windowHeight:    24,
 		cfg:             cfg,
 		state:           state,
 		focus:           textFocus,
@@ -210,9 +216,9 @@ func newModel(preselectedModelID, dataRoot string) model {
 		return m
 	}
 
-	if probe := runtime.ProbeBackend(backendURL); probe.Ready {
+	if status := m.runtime.RuntimeStatus(); status.Ready {
 		m.runtimeReady = true
-		m.status = probe.Message
+		m.status = status.Message
 	} else {
 		m.runtimeReady = false
 		m.status = "No local runtime detected. Choose a model to install."
@@ -237,9 +243,9 @@ func newTextarea(placeholder string, charLimit, height int) textarea.Model {
 	ta.SetHeight(height)
 
 	focused, blurred := textarea.DefaultStyles()
-	focused.Base = focused.Base.BorderStyle(asciiBorder).BorderForeground(colorAccent).Padding(0, 1)
+	focused.Base = focused.Base.Padding(0, 0)
 	focused.CursorLine = lipgloss.NewStyle()
-	blurred.Base = blurred.Base.BorderStyle(asciiBorder).BorderForeground(colorMutedBorder).Padding(0, 1)
+	blurred.Base = blurred.Base.Padding(0, 0)
 	blurred.CursorLine = lipgloss.NewStyle()
 	ta.FocusedStyle = focused
 	ta.BlurredStyle = blurred
@@ -277,9 +283,9 @@ func (m *model) prepareStartupRuntime(modelPath string) bool {
 		return false
 	}
 	m.screen = translateScreen
-	if probe := runtime.ProbeBackend(m.backendURL); probe.Ready {
+	if status := m.runtime.RuntimeStatus(); status.Ready {
 		m.runtimeReady = true
-		m.status = probe.Message
+		m.status = status.Message
 		return true
 	}
 	m.runtimeReady = false

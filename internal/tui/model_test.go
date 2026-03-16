@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,6 +18,13 @@ import (
 	"translategemma-ui/internal/runtime"
 	"translategemma-ui/internal/translate"
 )
+
+func writeManagedPIDFile(t *testing.T, root string, pid int) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(root, "runtime.pid"), []byte(fmt.Sprintf("%d\n", pid)), 0o644); err != nil {
+		t.Fatalf("write managed runtime pid file: %v", err)
+	}
+}
 
 func TestLocalModelPathFindsPackagedLlamafile(t *testing.T) {
 	root := t.TempDir()
@@ -182,6 +190,61 @@ func TestTranslateScreenAutoLoadsInstalledRuntimeWhenBackendIdle(t *testing.T) {
 	}
 }
 
+func TestTranslateScreenRunShowsStreamingPlaceholderWhenBackendReady(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models", "/healthz", "/":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	m := newModel("", t.TempDir())
+	m.screen = translateScreen
+	m.input.SetValue("hello")
+	m.syncBackendURL(server.URL, false)
+	writeManagedPIDFile(t, m.dataRoot, os.Getpid())
+	m.runtimeReady = true
+	m.syncOutputViewport()
+
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	updated := next.(model)
+
+	if !updated.streaming {
+		t.Fatalf("expected translate shortcut to enter streaming state")
+	}
+	if !strings.Contains(updated.outputView.View(), "Streaming translation...") {
+		t.Fatalf("expected output placeholder to show streaming state, got:\n%s", updated.outputView.View())
+	}
+	if cmd == nil {
+		t.Fatalf("expected translate shortcut to return a stream command")
+	}
+}
+
+func TestStreamErrMsgShowsErrorInOutput(t *testing.T) {
+	m := newModel("", t.TempDir())
+	m.screen = translateScreen
+	m.streaming = true
+	m.output = ""
+	m.status = "Streaming translation..."
+
+	next, _ := m.Update(streamErrMsg{Message: "backend request failed"})
+	updated := next.(model)
+
+	if updated.streaming {
+		t.Fatalf("expected stream error to stop streaming state")
+	}
+	if !strings.Contains(updated.output, "Error: backend request failed") {
+		t.Fatalf("expected stream error to surface in output, got %q", updated.output)
+	}
+	if got := updated.footerStatusLabel(); got != "idle" {
+		t.Fatalf("expected footer to keep reflecting runtime state after an error, got %q", got)
+	}
+}
+
 func TestModelScreenShowsSelectedAndLoadedStatesSeparately(t *testing.T) {
 	root := t.TempDir()
 	runtimeDir := filepath.Join(root, "runtimes")
@@ -225,8 +288,8 @@ func TestModelScreenShowsSelectedAndLoadedStatesSeparately(t *testing.T) {
 	if strings.Contains(idleView, "LOADED") {
 		t.Fatalf("expected idle model view to avoid loaded label, got:\n%s", idleView)
 	}
-	if !strings.Contains(idleView, "Runtime Catalog") {
-		t.Fatalf("expected redesigned model view to render the runtime catalog panel, got:\n%s", idleView)
+	if !strings.Contains(idleView, "Runtime Library") {
+		t.Fatalf("expected redesigned model view to render the runtime library panel, got:\n%s", idleView)
 	}
 
 	m.runtimeReady = true
@@ -235,8 +298,14 @@ func TestModelScreenShowsSelectedAndLoadedStatesSeparately(t *testing.T) {
 	if !strings.Contains(readyView, "LOADED") {
 		t.Fatalf("expected ready model view to show loaded runtime, got:\n%s", readyView)
 	}
-	if !strings.Contains(readyView, "Loaded runtime: "+runtimeFile) {
-		t.Fatalf("expected banner to show loaded runtime descriptor, got:\n%s", readyView)
+	if !strings.Contains(readyView, "Loaded runtime:") {
+		t.Fatalf("expected header to show loaded runtime descriptor, got:\n%s", readyView)
+	}
+	if !strings.Contains(readyView, runtimeFile) {
+		t.Fatalf("expected ready model view to include the selected runtime name, got:\n%s", readyView)
+	}
+	if !strings.Contains(readyView, "Translate") && !strings.Contains(readyView, "Runtime Library") {
+		t.Fatalf("expected redesigned view shell to render a screen title, got:\n%s", readyView)
 	}
 }
 
@@ -267,6 +336,7 @@ func TestSelectingAlreadyLoadedRuntimeReturnsToWorkspaceWithoutReload(t *testing
 	if err := config.SaveAppState(root, config.AppState{BackendURL: server.URL}); err != nil {
 		t.Fatalf("save app state: %v", err)
 	}
+	writeManagedPIDFile(t, root, os.Getpid())
 
 	restoreCatalog := huggingface.SeedCatalogForTests([]models.QuantizedModel{
 		{
@@ -427,5 +497,274 @@ func TestStaleStreamTaskClosedDoesNotClearCurrentTask(t *testing.T) {
 	}
 	if !updated.streaming {
 		t.Fatalf("expected stale close event to preserve streaming state")
+	}
+}
+
+func TestTranslateScreenCopiesOutputToClipboard(t *testing.T) {
+	prev := writeClipboard
+	t.Cleanup(func() {
+		writeClipboard = prev
+	})
+
+	copied := ""
+	writeClipboard = func(value string) error {
+		copied = value
+		return nil
+	}
+
+	m := newModel("", t.TempDir())
+	m.screen = translateScreen
+	m.output = "translated text"
+	m.syncOutputViewport()
+	_ = m.setFocus(outputFocus)
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	updated := next.(model)
+
+	if copied != "translated text" {
+		t.Fatalf("expected output to be copied, got %q", copied)
+	}
+	if updated.status != "Translation copied to clipboard" {
+		t.Fatalf("unexpected copy status: %q", updated.status)
+	}
+}
+
+func TestTypingYInInputDoesNotTriggerCopy(t *testing.T) {
+	prev := writeClipboard
+	t.Cleanup(func() {
+		writeClipboard = prev
+	})
+
+	copied := false
+	writeClipboard = func(value string) error {
+		copied = true
+		return nil
+	}
+
+	m := newModel("", t.TempDir())
+	m.screen = translateScreen
+	_ = m.setFocus(textFocus)
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	updated := next.(model)
+
+	if copied {
+		t.Fatalf("expected y in the input editor to type text, not trigger copy")
+	}
+	if updated.input.Value() != "y" {
+		t.Fatalf("expected input editor to receive y, got %q", updated.input.Value())
+	}
+}
+
+func TestTranslateScreenClearShortcutClearsFocusedArea(t *testing.T) {
+	m := newModel("", t.TempDir())
+	m.screen = translateScreen
+	m.input.SetValue("hello")
+	_ = m.setFocus(textFocus)
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlL})
+	updated := next.(model)
+
+	if updated.input.Value() != "" {
+		t.Fatalf("expected source text to be cleared, got %q", updated.input.Value())
+	}
+	if updated.status != "Source text cleared" {
+		t.Fatalf("unexpected clear status: %q", updated.status)
+	}
+
+	updated.output = "translated text"
+	updated.syncOutputViewport()
+	_ = updated.setFocus(outputFocus)
+
+	next, _ = updated.Update(tea.KeyMsg{Type: tea.KeyCtrlL})
+	updated = next.(model)
+
+	if updated.output != "" {
+		t.Fatalf("expected output to be cleared, got %q", updated.output)
+	}
+	if updated.status != "Translation output cleared" {
+		t.Fatalf("unexpected output clear status: %q", updated.status)
+	}
+}
+
+func TestTranslateScreenClearInputShortcutClearsSourceFromAnyFocus(t *testing.T) {
+	m := newModel("", t.TempDir())
+	m.screen = translateScreen
+	m.input.SetValue("hello")
+	m.instruction.SetValue("preserve brand names")
+	m.output = "translated text"
+	m.syncOutputViewport()
+	_ = m.setFocus(outputFocus)
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlK})
+	updated := next.(model)
+
+	if updated.input.Value() != "" {
+		t.Fatalf("expected source text to be cleared, got %q", updated.input.Value())
+	}
+	if updated.instruction.Value() != "preserve brand names" {
+		t.Fatalf("expected instruction to remain unchanged, got %q", updated.instruction.Value())
+	}
+	if updated.output != "translated text" {
+		t.Fatalf("expected output to remain unchanged, got %q", updated.output)
+	}
+	if updated.status != "Source text cleared" {
+		t.Fatalf("unexpected clear-input status: %q", updated.status)
+	}
+}
+
+func TestFooterStatusLabelReflectsRuntimeState(t *testing.T) {
+	m := newModel("", t.TempDir())
+	m.runtimeReady = false
+	m.streaming = false
+	m.screen = translateScreen
+
+	if got := m.footerStatusLabel(); got != "idle" {
+		t.Fatalf("expected idle footer status by default, got %q", got)
+	}
+
+	m.runtimeReady = true
+	if got := m.footerStatusLabel(); got != "ready" {
+		t.Fatalf("expected ready footer status when runtime is ready, got %q", got)
+	}
+
+	m.screen = provisionScreen
+	if got := m.footerStatusLabel(); got != "warming" {
+		t.Fatalf("expected warming footer status during provision, got %q", got)
+	}
+
+	m.screen = translateScreen
+	m.streaming = true
+	if got := m.footerStatusLabel(); got != "ready" {
+		t.Fatalf("expected footer to stay on runtime status while translating, got %q", got)
+	}
+}
+
+func TestFooterShowsFullModelName(t *testing.T) {
+	m := newModel("", t.TempDir())
+	m.selectedName = "translategemma-4b-it.Q8_0.mmproj-Q8_0.llamafile"
+
+	left, _ := m.renderFooterMeta()
+	if !strings.Contains(left, "translategemma-4b-it.Q8_0.mmproj-Q8_0.llamafile") {
+		t.Fatalf("expected footer to keep the full model name, got %q", left)
+	}
+}
+
+func TestOutputStateLabelUsesDoneAndError(t *testing.T) {
+	m := newModel("", t.TempDir())
+	m.output = "你好，世界"
+	m.status = "Translation completed"
+
+	if got := m.outputStateLabel(); got != "Done" {
+		t.Fatalf("expected completed output label to be Done, got %q", got)
+	}
+	if got := outputStateTone(m); got != "success" {
+		t.Fatalf("expected completed output tone to be success, got %q", got)
+	}
+
+	m.status = "backend request failed"
+	if got := m.outputStateLabel(); got != "Error" {
+		t.Fatalf("expected failed output label to be Error, got %q", got)
+	}
+	if got := outputStateTone(m); got != "error" {
+		t.Fatalf("expected failed output tone to be error, got %q", got)
+	}
+}
+
+func TestRenderHelpTruncatesWithoutReplacementRune(t *testing.T) {
+	m := newModel("", t.TempDir())
+	m.screen = translateScreen
+	m.windowWidth = 36
+
+	view := m.renderHelp()
+	if strings.Contains(view, "\uFFFD") {
+		t.Fatalf("expected help line to avoid replacement runes, got %q", view)
+	}
+}
+
+func TestProvisionScreenUsesUnifiedShellLayout(t *testing.T) {
+	m := newModel("", t.TempDir())
+	m.screen = provisionScreen
+	m.selectedName = "translategemma-4b-it.Q8_0.mmproj-Q8_0.llamafile"
+	m.status = "Loading model into runtime"
+	m.provisionStage = "load"
+	m.downloadPercent = -1
+	m.loadPercent = 44
+
+	view := m.View()
+	if !strings.Contains(view, "TranslateGemmaUI") {
+		t.Fatalf("expected provision screen to render the shared app banner, got:\n%s", view)
+	}
+	if !strings.Contains(view, "Warming Runtime") {
+		t.Fatalf("expected provision screen to show the warmup title, got:\n%s", view)
+	}
+	if !strings.Contains(view, "Model") {
+		t.Fatalf("expected provision screen to include the selected model line, got:\n%s", view)
+	}
+	if strings.Contains(view, "Selected runtime:") {
+		t.Fatalf("expected provision screen to avoid the old shell header, got:\n%s", view)
+	}
+	if strings.Contains(view, "WORKING") {
+		t.Fatalf("expected provision screen to avoid the old standalone status bar, got:\n%s", view)
+	}
+}
+
+func TestProvisionProgressTracksDownloadSpeed(t *testing.T) {
+	m := newModel("", t.TempDir())
+	m.screen = provisionScreen
+
+	next, _ := m.Update(provisionProgressMsg{
+		Stage:            "download",
+		Percent:          42,
+		Downloaded:       512 * 1024 * 1024,
+		Total:            1024 * 1024 * 1024,
+		SpeedBytesPerSec: 12.5 * 1024 * 1024,
+		Message:          "Downloading artifact",
+	})
+	updated := next.(model)
+
+	if updated.downloadedBytes != 512*1024*1024 {
+		t.Fatalf("expected downloaded bytes to sync, got %d", updated.downloadedBytes)
+	}
+	if updated.downloadTotal != 1024*1024*1024 {
+		t.Fatalf("expected download total to sync, got %d", updated.downloadTotal)
+	}
+	if updated.downloadSpeed != 12.5*1024*1024 {
+		t.Fatalf("expected download speed to sync, got %f", updated.downloadSpeed)
+	}
+}
+
+func TestProvisionScreenShowsDownloadSpeed(t *testing.T) {
+	m := newModel("", t.TempDir())
+	m.screen = provisionScreen
+	m.selectedName = "translategemma-4b-it.Q8_0.mmproj-Q8_0.llamafile"
+	m.status = "Downloading artifact"
+	m.provisionStage = "download"
+	m.downloadPercent = 42
+	m.downloadedBytes = 512 * 1024 * 1024
+	m.downloadTotal = 1024 * 1024 * 1024
+	m.downloadSpeed = 12.5 * 1024 * 1024
+
+	view := m.View()
+	if !strings.Contains(view, "512.0 MB / 1.00 GB") {
+		t.Fatalf("expected provision view to include byte progress, got:\n%s", view)
+	}
+	if !strings.Contains(view, "12.5 MB/s") {
+		t.Fatalf("expected provision view to include download speed, got:\n%s", view)
+	}
+}
+
+func TestTranslateLayoutUsesShorterOutputViewport(t *testing.T) {
+	m := newModel("", t.TempDir())
+
+	_, _, _, _, inputHeight, instructionHeight, outputHeight := m.translateLayoutMetrics()
+
+	if outputHeight != inputHeight+instructionHeight+2 {
+		t.Fatalf(
+			"expected output viewport height to be two lines shorter than the previous full-column layout, got input=%d instruction=%d output=%d",
+			inputHeight,
+			instructionHeight,
+			outputHeight,
+		)
 	}
 }
