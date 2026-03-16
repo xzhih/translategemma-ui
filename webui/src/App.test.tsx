@@ -161,21 +161,41 @@ function streamResponse(events: Array<Record<string, unknown>>) {
   );
 }
 
-function streamingDownloadResponse(
+function timedStreamingDownloadResponse(
   signal: AbortSignal | undefined,
-  events: Array<Record<string, unknown>>,
+  steps: Array<{ event: Record<string, unknown>; delayMs?: number }>,
 ) {
   const encoder = new TextEncoder();
   return Promise.resolve(
     new Response(
       new ReadableStream<Uint8Array>({
         start(controller) {
-          for (const event of events) {
-            controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+          let closed = false;
+          const timers: Array<ReturnType<typeof setTimeout>> = [];
+          const cleanup = () => {
+            closed = true;
+            for (const timer of timers) {
+              clearTimeout(timer);
+            }
+          };
+
+          let elapsed = 0;
+          for (const step of steps) {
+            elapsed += step.delayMs ?? 0;
+            timers.push(
+              setTimeout(() => {
+                if (closed) {
+                  return;
+                }
+                controller.enqueue(encoder.encode(`${JSON.stringify(step.event)}\n`));
+              }, elapsed),
+            );
           }
+
           signal?.addEventListener(
             "abort",
             () => {
+              cleanup();
               controller.error(new DOMException("The operation was aborted.", "AbortError"));
             },
             { once: true },
@@ -377,6 +397,31 @@ describe("TranslateGemmaUI webui", () => {
     expect(window.localStorage.getItem(appLocaleStorageKey)).toBe("zh-CN");
   });
 
+  it("opens the model drawer when translate is clicked without any local model", async () => {
+    const user = userEvent.setup();
+
+    bootstrapState.needsModelSetup = true;
+    bootstrapState.runtimeReady = false;
+    bootstrapState.runtimeStatus = "No local model installed";
+    bootstrapState.runtimeStatusCode = "no_local_model_select_download";
+    bootstrapState.models = bootstrapState.models.map((item) => ({
+      ...item,
+      installed: false,
+      active: false,
+      selected: false,
+      loaded: false,
+    }));
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Go to text screen" });
+    expect(screen.queryByText("No local runtime is installed yet. Open the model drawer and download q4_k_m or q8_0_vision first.")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Translate" }));
+
+    expect(screen.getByRole("dialog", { name: "Model List" })).toBeInTheDocument();
+  });
+
   it("shows Loading model on the first translation while the selected runtime loads", async () => {
     const user = userEvent.setup();
     const baseFetch = globalThis.fetch as typeof fetch;
@@ -570,23 +615,27 @@ describe("TranslateGemmaUI webui", () => {
         const url = typeof input === "string" ? input : input.toString();
         const method = init?.method ?? "GET";
         if (url === "/api/models/install" && method === "POST") {
-          return streamingDownloadResponse(init?.signal ?? undefined, [
+          return timedStreamingDownloadResponse(init?.signal ?? undefined, [
             {
-              type: "status",
-              stage: "download",
-              message: "Downloading artifact",
-              percent: 0,
-              downloadedBytes: 0,
-              totalBytes: 2147483648,
+              event: {
+                type: "status",
+                stage: "check",
+                message: "Preparing model install",
+                messageCode: "preparing_model_install",
+                percent: 0,
+              },
             },
             {
-              type: "progress",
-              stage: "download",
-              message: "Downloading artifact",
-              percent: 37.5,
-              downloadedBytes: 805306368,
-              totalBytes: 2147483648,
-              speedBytesPerSecond: 67108864,
+              event: {
+                type: "progress",
+                stage: "download",
+                message: "Downloading artifact",
+                percent: 37.5,
+                downloadedBytes: 805306368,
+                totalBytes: 2147483648,
+                speedBytesPerSecond: 67108864,
+              },
+              delayMs: 40,
             },
           ]);
         }
@@ -600,11 +649,13 @@ describe("TranslateGemmaUI webui", () => {
     await user.click(screen.getByRole("button", { name: "Model" }));
     await user.click(screen.getAllByRole("button", { name: "Download" })[0]);
 
+    expect(await screen.findByText("Preparing model install")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Download" })).not.toBeInTheDocument();
     expect(await screen.findByText("768 MB / 2.00 GB")).toBeInTheDocument();
     expect(screen.getByText("64.0 MB/s")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cancel download" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Cancel download" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Download" })).toBeEnabled();

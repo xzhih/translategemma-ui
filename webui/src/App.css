@@ -257,8 +257,7 @@
 
 .instruction-card,
 .status-banner,
-.loading-card,
-.setup-banner {
+.loading-card {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--muted);
@@ -342,8 +341,7 @@
 }
 
 .status-banner,
-.loading-card,
-.setup-banner {
+.loading-card {
   padding: 12px 14px;
   color: var(--muted-text);
   font-size: 13px;
@@ -388,6 +386,12 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.download-card__cancel {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  white-space: nowrap;
 }
 
 .download-card__copy {
@@ -740,15 +744,6 @@
 
 .spin {
   animation: spin 0.9s linear infinite;
-}
-
-.setup-banner {
-  position: fixed;
-  left: 24px;
-  right: 24px;
-  bottom: 20px;
-  z-index: 10;
-  box-shadow: var(--panel-shadow);
 }
 
 @keyframes spin {

@@ -676,6 +676,7 @@ function ImageScreen({
   imageOutput,
   maxUploadMB,
   visionEnabled,
+  needsModelSetup,
   busy,
   modelLoading,
   modelBusy,
@@ -707,6 +708,7 @@ function ImageScreen({
   imageOutput: string;
   maxUploadMB: number;
   visionEnabled: boolean;
+  needsModelSetup: boolean;
   busy: boolean;
   modelLoading: boolean;
   modelBusy: boolean;
@@ -750,7 +752,11 @@ function ImageScreen({
 
       <TranslationActionsRow
         centerAction={
-          <Button variant="primary" onClick={onTranslate} disabled={busy || modelLoading || !visionEnabled}>
+          <Button
+            variant="primary"
+            onClick={onTranslate}
+            disabled={busy || modelLoading || (!visionEnabled && !needsModelSetup)}
+          >
             {modelLoading ? (
               <>
                 <LoaderCircle size={16} className="spin" />
@@ -879,10 +885,15 @@ function DownloadProgressCard({
           </span>
           <strong className="download-card__title">{download.modelName}</strong>
         </div>
-        <Button variant="danger" onClick={onCancel} disabled={download.canceling}>
+        <Button
+          variant="danger"
+          className="download-card__cancel"
+          onClick={onCancel}
+          disabled={download.canceling}
+        >
           {download.canceling
             ? t("buttons.cancelingDownload", { defaultValue: "Canceling..." })
-            : t("buttons.cancelDownload", { defaultValue: "Cancel download" })}
+            : t("buttons.cancelDownload", { defaultValue: "Cancel" })}
         </Button>
       </div>
       <div className="download-card__track" aria-hidden="true">
@@ -1433,21 +1444,24 @@ function App() {
   }
 
   function updateDownloadTracking(url: string, modelId: string | undefined, event: StreamEvent) {
-    if (event.stage !== "download") {
-      return;
-    }
     const model = findModelForAction(url, modelId);
     if (!model) {
       return;
     }
+    const isDownloadStage = event.stage === "download";
+    const message = resolveServerMessage(event.messageCode, event.message, t);
     setDownloadState((current) => ({
       modelId: model.id,
       modelName: model.fileName,
-      message: event.message ?? current?.message ?? "",
-      percent: clampPercent(event.percent ?? current?.percent ?? 0),
-      downloadedBytes: event.downloadedBytes ?? current?.downloadedBytes ?? 0,
-      totalBytes: event.totalBytes ?? current?.totalBytes ?? 0,
-      speedBytesPerSecond: event.speedBytesPerSecond ?? current?.speedBytesPerSecond ?? 0,
+      message: message || current?.message || "",
+      percent: isDownloadStage
+        ? clampPercent(event.percent ?? current?.percent ?? 0)
+        : current?.percent ?? clampPercent(event.percent ?? 0),
+      downloadedBytes: isDownloadStage
+        ? event.downloadedBytes ?? current?.downloadedBytes ?? 0
+        : current?.downloadedBytes ?? 0,
+      totalBytes: isDownloadStage ? event.totalBytes ?? current?.totalBytes ?? 0 : current?.totalBytes ?? 0,
+      speedBytesPerSecond: isDownloadStage ? event.speedBytesPerSecond ?? current?.speedBytesPerSecond ?? 0 : 0,
       canceling: current?.canceling ?? false,
     }));
   }
@@ -1464,6 +1478,10 @@ function App() {
   }
 
   async function handleTextTranslate() {
+    if (needsModelSetup) {
+      setDrawer("model");
+      return;
+    }
     if (!textInput.trim() || busyText || modelLoading) {
       return;
     }
@@ -1526,6 +1544,10 @@ function App() {
   }
 
   async function handleImageTranslate() {
+    if (needsModelSetup) {
+      setDrawer("model");
+      return;
+    }
     if (!uploadedFile || busyImage || modelLoading || !visionEnabled) {
       return;
     }
@@ -1636,9 +1658,6 @@ function App() {
           }
           if (isDownloadAction) {
             updateDownloadTracking(url, modelId, event);
-            if (event.stage && event.stage !== "download") {
-              setDownloadState(null);
-            }
           }
           if (event.type === "done") {
             setDownloadState(null);
@@ -1800,6 +1819,7 @@ function App() {
             imageOutput={fileOutput}
             maxUploadMB={maxUploadMB}
             visionEnabled={visionEnabled}
+            needsModelSetup={needsModelSetup}
             busy={busyImage}
             modelLoading={modelLoading}
             modelBusy={visionSwitchBusy}
@@ -1876,10 +1896,6 @@ function App() {
         onClose={() => setSelectedHistoryId(null)}
         onCopy={() => void handleCopy(selectedHistory?.output ?? "")}
       />
-
-      {needsModelSetup ? (
-        <div className="setup-banner">{t("setup.banner")}</div>
-      ) : null}
     </div>
   );
 }

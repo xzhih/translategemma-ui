@@ -17,6 +17,7 @@ llamafile-*
 unpacked-*/
 
 # Local scratch and generated artifacts
+node_modules/
 output/
 work/
 tmp/
