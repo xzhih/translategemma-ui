@@ -101,11 +101,6 @@ Default runtime source:
 - Hugging Face repo: [xzhih/translategemma-4b-it-llamafile](https://huggingface.co/xzhih/translategemma-4b-it-llamafile)
 - Manifest URL: `https://huggingface.co/xzhih/translategemma-4b-it-llamafile/resolve/main/manifest-v1.json`
 
-Optional environment variables:
-
-- `HF_TOKEN` or `HUGGINGFACE_HUB_TOKEN` for private Hugging Face access
-- `TRANSLATEGEMMA_UI_MANIFEST_PATH` to override the runtime manifest with a local file
-
 Current runtime matrix:
 
 - `q4_k_m` for text translation
@@ -142,6 +137,13 @@ Development requirements:
 - Go 1.25+
 - Bun 1.2+
 
+Install frontend dependencies:
+
+```bash
+cd webui
+bun install
+```
+
 Run backend tests:
 
 ```bash
@@ -162,7 +164,13 @@ cd webui
 bun run dev -- --host 127.0.0.1 --port 5173
 ```
 
-The Vite dev server proxies `/api/*` and `/healthz` to `http://127.0.0.1:8090`.
+Run the backend in another terminal:
+
+```bash
+go run ./cmd/translategemma-ui --webui
+```
+
+The Vite dev server proxies `/api/*` and `/healthz` to `http://127.0.0.1:8090`, so the local backend needs to be running while you work on the frontend.
 
 Build a local release binary:
 
@@ -200,6 +208,4 @@ Release flow:
 ## Troubleshooting
 
 - Runtime logs: `<user-home>/.translategemma-ui/logs/runtime.log`
-- If the model list is empty during development, check `TRANSLATEGEMMA_UI_MANIFEST_PATH`
-- If runtime downloads fail with `401` or `403`, check `HF_TOKEN` or `HUGGINGFACE_HUB_TOKEN`
 - If local runtime startup fails, make sure the local backend port is free and at least one packaged runtime is installed
