@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+
+# Build outputs
+translategemma-ui
+*.exe
+*.test
+
+# Logs
+*.log
+
+# Local runtime/model artifacts
+*.gguf
+*.llamafile
+*.llamafile.*
+llamafile-*
+unpacked-*/
+
+# Local scratch and generated artifacts
+output/
+work/
+tmp/
+.playwright-cli/
+webui/node_modules/
+webui/dist/
+internal/web/frontend/
+dist/
+
+# User-local app directory snapshots if created inside repo
+.translategemma-ui/

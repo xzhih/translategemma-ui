@@ -1,0 +1,179 @@
+{
+  "app": {
+    "title": "TranslateGemmaUI",
+    "loading": "TranslateGemmaUI wird geladen..."
+  },
+  "header": {
+    "goToTextScreen": "Zur Textübersetzung wechseln",
+    "model": "Modell",
+    "switchToChinese": "UI-Sprache auf Chinesisch umstellen",
+    "switchToChineseShort": "中文",
+    "switchToEnglish": "UI-Sprache auf Englisch umstellen",
+    "switchToEnglishShort": "EN"
+  },
+  "accessibility": {
+    "translationMode": "Übersetzungsmodus",
+    "languageSelector": "Sprachauswahl",
+    "uiLanguageSelector": "UI-Sprache",
+    "swapLanguages": "Quell- und Zielsprache tauschen"
+  },
+  "tabs": {
+    "text": "Text",
+    "image": "Bild"
+  },
+  "buttons": {
+    "history": "Verlauf",
+    "copy": "Kopieren",
+    "translate": "Übersetzen",
+    "translating": "Wird übersetzt",
+    "loadingModel": "Modell wird geladen",
+    "delete": "Löschen",
+    "download": "Herunterladen",
+    "clearHistory": "Verlauf löschen",
+    "clearingHistory": "Verlauf wird gelöscht",
+    "useNow": "Jetzt verwenden",
+    "selected": "Ausgewählt",
+    "active": "AKTIV",
+    "reset": "Zurücksetzen",
+    "chooseAnother": "Anderes Bild wählen",
+    "uploadImage": "Bild hochladen",
+    "switching": "Wird umgeschaltet",
+    "switchToVision": "Zu q8_0_vision wechseln",
+    "copyResult": "Ergebnis kopieren"
+  },
+  "instruction": {
+    "label": "Zusätzliche Hinweise",
+    "hint": "Nur ausfüllen, wenn du Formulierung, Ton, Format oder Begriffe gezielt steuern möchtest.",
+    "textPlaceholder": "Zum Beispiel: Produktnamen und technische Begriffe unverändert lassen.",
+    "imagePlaceholder": "Zum Beispiel: Markennamen unverändert lassen und Zeilenumbrüche beibehalten."
+  },
+  "textScreen": {
+    "sourceTextAria": "Quelltext",
+    "sourceTextPlaceholder": "Text zum Übersetzen eingeben oder einfügen...",
+    "resultPlaceholder": "Ergebnis...",
+    "instructionAria": "Übersetzungshinweis"
+  },
+  "imageScreen": {
+    "uploadAreaAria": "Bereich zum Hochladen von Bildern",
+    "uploadInputAria": "Bild hochladen",
+    "requiresVisionTitle": "Für die Bildübersetzung wird q8_0_vision benötigt",
+    "requiresVisionHint": "Wechsle vor dem Hochladen eines Bildes zur aktiven q8_0_vision-Laufzeit.",
+    "uploadTitle": "Bild hochladen",
+    "uploadHint": "Ziehe ein Bild hierher oder wähle eine Datei aus. Unterstützt PNG / JPG / GIF bis {{maxUploadMB}}MB.",
+    "replaceHint": "Lege ein anderes Bild hier ab, um es zu ersetzen, oder wähle eine andere Datei aus.",
+    "previewAlt": "Vorschau von {{name}}",
+    "selectedPreviewAlt": "Vorschau des ausgewählten Bildes",
+    "instructionAria": "Anweisung für die Bildübersetzung"
+  },
+  "model": {
+    "drawerTitle": "Modellliste",
+    "closeDrawer": "Modelldrawer schließen",
+    "closeList": "Modellliste schließen",
+    "listAria": "Einträge der Modellliste",
+    "capabilityVision": "Bild",
+    "capabilityText": "Text",
+    "recommended": "Empfohlen",
+    "sourceInstalled": "Installiert",
+    "sourceRemote": "Remote",
+    "state": {
+      "downloadRequired": {
+        "label": "Download erforderlich",
+        "detail": "Es ist noch keine lokale Laufzeit installiert."
+      },
+      "unavailable": {
+        "label": "Nicht verfügbar",
+        "detail": "Modellmetadaten sind nicht verfügbar."
+      },
+      "loaded": {
+        "label": "Geladen",
+        "detail": "Läuft aktuell in der lokalen Laufzeit."
+      },
+      "selected": {
+        "label": "Ausgewählt",
+        "detail": "Wird bei der nächsten Übersetzungsanfrage geladen."
+      },
+      "installed": {
+        "label": "Installiert",
+        "detail": "Lokal verfügbar, aber derzeit nicht ausgewählt."
+      },
+      "remote": {
+        "label": "Remote",
+        "detail": "Im Katalog verfügbar, aber noch nicht lokal heruntergeladen."
+      }
+    }
+  },
+  "history": {
+    "drawerTitle": "Verlauf",
+    "closeDrawer": "Verlaufsdrawer schließen",
+    "closeList": "Verlauf schließen",
+    "listAria": "Verlaufseinträge",
+    "detailTitle": "Verlaufsdetails",
+    "closeDetail": "Details schließen",
+    "translationTime": "Übersetzungszeit",
+    "source": "Quelle",
+    "target": "Ziel",
+    "sourceText": "Quelltext",
+    "targetText": "Zieltext"
+  },
+  "setup": {
+    "banner": "Es ist noch keine lokale Laufzeit installiert. Öffne den Modelldrawer und lade zuerst q4_k_m oder q8_0_vision herunter."
+  },
+  "messages": {
+    "fileTranslationCompleted": "Bildübersetzung abgeschlossen"
+  },
+  "serverStatus": {
+    "ready": "Bereit",
+    "runtime_ready": "Laufzeit ist bereit",
+    "no_local_model_select_download": "Kein lokales Modell installiert. Wähle ein Modell zum Herunterladen aus.",
+    "runtime_idle_load_on_first_translation": "Laufzeit im Leerlauf. Das aktive Modell wird bei der ersten Übersetzung geladen.",
+    "translation_completed": "Übersetzung abgeschlossen",
+    "streaming_translation": "Streaming-Übersetzung läuft",
+    "file_translation_completed": "Bildübersetzung abgeschlossen",
+    "history_item_deleted": "Verlaufseintrag gelöscht",
+    "history_cleared": "Verlauf gelöscht",
+    "model_installed_load_on_first_translation": "Modell installiert. Die Laufzeit wird bei der ersten Übersetzung geladen.",
+    "model_active": "Modell aktiv",
+    "vision_runtime_active": "Bild-Laufzeit aktiv",
+    "model_deleted": "Modell gelöscht",
+    "model_not_installed_locally": "Modell ist lokal nicht installiert",
+    "unknown_model_selection": "Unbekannte Modellauswahl",
+    "invalid_form_payload": "Ungültige Formulardaten",
+    "missing_history_id": "Verlaufs-ID fehlt",
+    "invalid_history_id": "Ungültige Verlaufs-ID",
+    "history_item_not_found": "Verlaufseintrag nicht gefunden",
+    "vision_runtime_unavailable": "q8_0_vision-Laufzeit ist nicht verfügbar",
+    "preparing_model_install": "Modellinstallation wird vorbereitet",
+    "switching_active_model": "Aktives Modell wird umgeschaltet",
+    "removing_local_model": "Lokales Modell wird entfernt",
+    "downloading_vision_runtime": "q8_0_vision-Laufzeit wird heruntergeladen",
+    "preparing_active_model": "Aktives Modell wird vorbereitet",
+    "active_runtime_no_image_support": "Die aktive Laufzeit unterstützt keine Bildübersetzung. Wechsle zuerst zu q8_0_vision.",
+    "invalid_multipart_payload_or_file_too_large": "Ungültige Multipart-Daten oder Datei zu groß.",
+    "missing_image_file": "Bilddatei fehlt.",
+    "unable_to_read_image_file": "Bilddatei kann nicht gelesen werden.",
+    "image_file_empty": "Bilddatei ist leer.",
+    "image_file_exceeds_size_limit": "Bilddatei überschreitet die Größenbegrenzung.",
+    "unsupported_image_format": "Nicht unterstütztes Bildformat. Nur JPEG, PNG und GIF sind erlaubt."
+  },
+  "errors": {
+    "failedLoadBootstrap": "Initialzustand konnte nicht geladen werden",
+    "requestFailed": "Anfrage fehlgeschlagen",
+    "streamFailed": "Stream fehlgeschlagen",
+    "imageTranslationFailed": "Bildübersetzung fehlgeschlagen",
+    "modelActionFailed": "Modellaktion fehlgeschlagen",
+    "historyDeleteFailed": "Verlauf konnte nicht gelöscht werden",
+    "historyClearFailed": "Verlauf konnte nicht geleert werden"
+  },
+  "languages": {
+    "auto": "Automatisch erkennen",
+    "en": "Englisch",
+    "zh-CN": "Chinesisch (vereinfacht)",
+    "ja": "Japanisch",
+    "ko": "Koreanisch",
+    "de-DE": "Deutsch",
+    "fr": "Französisch",
+    "es": "Spanisch",
+    "ru": "Russisch",
+    "ar": "Arabisch"
+  }
+}

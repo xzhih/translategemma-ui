@@ -1,0 +1,179 @@
+{
+  "app": {
+    "title": "TranslateGemmaUI",
+    "loading": "Loading TranslateGemmaUI..."
+  },
+  "header": {
+    "goToTextScreen": "Go to text screen",
+    "model": "Model",
+    "switchToChinese": "Switch UI language to Chinese",
+    "switchToChineseShort": "中文",
+    "switchToEnglish": "Switch UI language to English",
+    "switchToEnglishShort": "EN"
+  },
+  "accessibility": {
+    "translationMode": "Translation mode",
+    "languageSelector": "Language selector",
+    "uiLanguageSelector": "UI language",
+    "swapLanguages": "Swap languages"
+  },
+  "tabs": {
+    "text": "Text",
+    "image": "Image"
+  },
+  "buttons": {
+    "history": "History",
+    "copy": "Copy",
+    "translate": "Translate",
+    "translating": "Translating",
+    "loadingModel": "Loading model",
+    "delete": "Delete",
+    "download": "Download",
+    "clearHistory": "Clear history",
+    "clearingHistory": "Clearing history",
+    "useNow": "Use now",
+    "selected": "Selected",
+    "active": "ACTIVE",
+    "reset": "Reset",
+    "chooseAnother": "Choose another",
+    "uploadImage": "Upload image",
+    "switching": "Switching",
+    "switchToVision": "Switch to q8_0_vision",
+    "copyResult": "Copy result"
+  },
+  "instruction": {
+    "label": "Optional guidance",
+    "hint": "Add this only if you want specific wording, tone, formatting, or terminology.",
+    "textPlaceholder": "For example: Keep product names and technical terms unchanged.",
+    "imagePlaceholder": "For example: Keep brand names unchanged and preserve line breaks."
+  },
+  "textScreen": {
+    "sourceTextAria": "Source text",
+    "sourceTextPlaceholder": "Type or paste text to translate...",
+    "resultPlaceholder": "Result...",
+    "instructionAria": "Translation instruction"
+  },
+  "imageScreen": {
+    "uploadAreaAria": "Image upload area",
+    "uploadInputAria": "Upload image",
+    "requiresVisionTitle": "Image translation requires q8_0_vision",
+    "requiresVisionHint": "Switch the active runtime to q8_0_vision before uploading an image.",
+    "uploadTitle": "Upload an image",
+    "uploadHint": "Drag an image here, or choose a file. Supports PNG / JPG / GIF, up to {{maxUploadMB}}MB.",
+    "replaceHint": "Drop another image here to replace it, or choose a different file.",
+    "previewAlt": "Preview of {{name}}",
+    "selectedPreviewAlt": "Selected image preview",
+    "instructionAria": "Image translation instruction"
+  },
+  "model": {
+    "drawerTitle": "Model List",
+    "closeDrawer": "Close model drawer",
+    "closeList": "Close model list",
+    "listAria": "Model list items",
+    "capabilityVision": "Vision",
+    "capabilityText": "Text",
+    "recommended": "Recommended",
+    "sourceInstalled": "Installed",
+    "sourceRemote": "Remote",
+    "state": {
+      "downloadRequired": {
+        "label": "Download required",
+        "detail": "No local runtime is installed yet."
+      },
+      "unavailable": {
+        "label": "Unavailable",
+        "detail": "Model metadata is unavailable."
+      },
+      "loaded": {
+        "label": "Loaded",
+        "detail": "Running inside the local runtime."
+      },
+      "selected": {
+        "label": "Selected",
+        "detail": "Loads on the next translation request."
+      },
+      "installed": {
+        "label": "Installed",
+        "detail": "Available locally but not selected."
+      },
+      "remote": {
+        "label": "Remote",
+        "detail": "Available in the catalog but not downloaded."
+      }
+    }
+  },
+  "history": {
+    "drawerTitle": "History",
+    "closeDrawer": "Close history drawer",
+    "closeList": "Close history",
+    "listAria": "History list items",
+    "detailTitle": "History Detail",
+    "closeDetail": "Close detail",
+    "translationTime": "Translation time",
+    "source": "Source",
+    "target": "Target",
+    "sourceText": "Source text",
+    "targetText": "Target text"
+  },
+  "setup": {
+    "banner": "No local runtime is installed yet. Open the model drawer and download q4_k_m or q8_0_vision first."
+  },
+  "messages": {
+    "fileTranslationCompleted": "File translation completed"
+  },
+  "serverStatus": {
+    "ready": "Ready",
+    "runtime_ready": "Runtime ready",
+    "no_local_model_select_download": "No local model installed. Select a model to download.",
+    "runtime_idle_load_on_first_translation": "Runtime idle. The active model will load on first translation.",
+    "translation_completed": "Translation completed",
+    "streaming_translation": "Streaming translation",
+    "file_translation_completed": "File translation completed",
+    "history_item_deleted": "History item deleted",
+    "history_cleared": "History cleared",
+    "model_installed_load_on_first_translation": "Model installed. Runtime will load on first translation.",
+    "model_active": "Model active",
+    "vision_runtime_active": "Vision runtime active",
+    "model_deleted": "Model deleted",
+    "model_not_installed_locally": "Model is not installed locally",
+    "unknown_model_selection": "Unknown model selection",
+    "invalid_form_payload": "Invalid form payload",
+    "missing_history_id": "Missing history ID",
+    "invalid_history_id": "Invalid history ID",
+    "history_item_not_found": "History item not found",
+    "vision_runtime_unavailable": "q8_0_vision runtime is not available",
+    "preparing_model_install": "Preparing model install",
+    "switching_active_model": "Switching active model",
+    "removing_local_model": "Removing local model",
+    "downloading_vision_runtime": "Downloading q8_0_vision runtime",
+    "preparing_active_model": "Preparing active model",
+    "active_runtime_no_image_support": "The active runtime does not support image translation. Switch to q8_0_vision first.",
+    "invalid_multipart_payload_or_file_too_large": "Invalid multipart payload or file too large.",
+    "missing_image_file": "Missing image file.",
+    "unable_to_read_image_file": "Unable to read image file.",
+    "image_file_empty": "Image file is empty.",
+    "image_file_exceeds_size_limit": "Image file exceeds the size limit.",
+    "unsupported_image_format": "Unsupported image format. Only JPEG, PNG, and GIF are allowed."
+  },
+  "errors": {
+    "failedLoadBootstrap": "Failed to load bootstrap state",
+    "requestFailed": "Request failed",
+    "streamFailed": "Stream failed",
+    "imageTranslationFailed": "Image translation failed",
+    "modelActionFailed": "Model action failed",
+    "historyDeleteFailed": "History delete failed",
+    "historyClearFailed": "History clear failed"
+  },
+  "languages": {
+    "auto": "Auto Detect",
+    "en": "English",
+    "zh-CN": "Chinese (Simplified)",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "de-DE": "German",
+    "fr": "French",
+    "es": "Spanish",
+    "ru": "Russian",
+    "ar": "Arabic"
+  }
+}

@@ -1,0 +1,179 @@
+{
+  "app": {
+    "title": "TranslateGemmaUI",
+    "loading": "Cargando TranslateGemmaUI..."
+  },
+  "header": {
+    "goToTextScreen": "Ir a la pantalla de traducción de texto",
+    "model": "Modelo",
+    "switchToChinese": "Cambiar la interfaz al chino",
+    "switchToChineseShort": "中文",
+    "switchToEnglish": "Cambiar la interfaz al inglés",
+    "switchToEnglishShort": "EN"
+  },
+  "accessibility": {
+    "translationMode": "Modo de traducción",
+    "languageSelector": "Selector de idioma",
+    "uiLanguageSelector": "Idioma de la interfaz",
+    "swapLanguages": "Intercambiar idioma de origen y destino"
+  },
+  "tabs": {
+    "text": "Texto",
+    "image": "Imagen"
+  },
+  "buttons": {
+    "history": "Historial",
+    "copy": "Copiar",
+    "translate": "Traducir",
+    "translating": "Traduciendo",
+    "loadingModel": "Cargando modelo",
+    "delete": "Eliminar",
+    "download": "Descargar",
+    "clearHistory": "Borrar historial",
+    "clearingHistory": "Borrando historial",
+    "useNow": "Usar ahora",
+    "selected": "Seleccionado",
+    "active": "ACTIVO",
+    "reset": "Restablecer",
+    "chooseAnother": "Elegir otra imagen",
+    "uploadImage": "Subir imagen",
+    "switching": "Cambiando",
+    "switchToVision": "Cambiar a q8_0_vision",
+    "copyResult": "Copiar resultado"
+  },
+  "instruction": {
+    "label": "Instrucción adicional",
+    "hint": "Añádelo solo si quieres indicar una redacción, tono, formato o terminología específicos.",
+    "textPlaceholder": "Por ejemplo: mantener sin cambios los nombres de productos y términos técnicos.",
+    "imagePlaceholder": "Por ejemplo: mantener los nombres de marca y conservar los saltos de línea."
+  },
+  "textScreen": {
+    "sourceTextAria": "Texto de origen",
+    "sourceTextPlaceholder": "Escribe o pega el texto que quieres traducir...",
+    "resultPlaceholder": "Resultado...",
+    "instructionAria": "Instrucción de traducción"
+  },
+  "imageScreen": {
+    "uploadAreaAria": "Área de carga de imagen",
+    "uploadInputAria": "Subir imagen",
+    "requiresVisionTitle": "La traducción de imágenes requiere q8_0_vision",
+    "requiresVisionHint": "Cambia el runtime activo a q8_0_vision antes de subir una imagen.",
+    "uploadTitle": "Subir una imagen",
+    "uploadHint": "Arrastra una imagen aquí o elige un archivo. Compatible con PNG / JPG / GIF, hasta {{maxUploadMB}}MB.",
+    "replaceHint": "Suelta otra imagen aquí para reemplazarla o elige un archivo diferente.",
+    "previewAlt": "Vista previa de {{name}}",
+    "selectedPreviewAlt": "Vista previa de la imagen seleccionada",
+    "instructionAria": "Instrucción para traducción de imagen"
+  },
+  "model": {
+    "drawerTitle": "Lista de modelos",
+    "closeDrawer": "Cerrar el panel de modelos",
+    "closeList": "Cerrar la lista de modelos",
+    "listAria": "Elementos de la lista de modelos",
+    "capabilityVision": "Imagen",
+    "capabilityText": "Texto",
+    "recommended": "Recomendado",
+    "sourceInstalled": "Instalado",
+    "sourceRemote": "Remoto",
+    "state": {
+      "downloadRequired": {
+        "label": "Descarga necesaria",
+        "detail": "Todavía no hay ningún runtime local instalado."
+      },
+      "unavailable": {
+        "label": "No disponible",
+        "detail": "Los metadatos del modelo no están disponibles."
+      },
+      "loaded": {
+        "label": "Cargado",
+        "detail": "Se está ejecutando en el runtime local."
+      },
+      "selected": {
+        "label": "Seleccionado",
+        "detail": "Se cargará en la próxima solicitud de traducción."
+      },
+      "installed": {
+        "label": "Instalado",
+        "detail": "Está disponible localmente, pero no está seleccionado ahora mismo."
+      },
+      "remote": {
+        "label": "Remoto",
+        "detail": "Está disponible en el catálogo, pero aún no se ha descargado localmente."
+      }
+    }
+  },
+  "history": {
+    "drawerTitle": "Historial",
+    "closeDrawer": "Cerrar el panel de historial",
+    "closeList": "Cerrar historial",
+    "listAria": "Elementos del historial",
+    "detailTitle": "Detalle del historial",
+    "closeDetail": "Cerrar detalle",
+    "translationTime": "Hora de traducción",
+    "source": "Origen",
+    "target": "Destino",
+    "sourceText": "Texto de origen",
+    "targetText": "Texto traducido"
+  },
+  "setup": {
+    "banner": "Todavía no hay ningún runtime local instalado. Abre el panel de modelos y descarga primero q4_k_m o q8_0_vision."
+  },
+  "messages": {
+    "fileTranslationCompleted": "La traducción de la imagen ha finalizado"
+  },
+  "serverStatus": {
+    "ready": "Listo",
+    "runtime_ready": "Runtime listo",
+    "no_local_model_select_download": "No hay ningún modelo local instalado. Selecciona un modelo para descargar.",
+    "runtime_idle_load_on_first_translation": "El runtime está inactivo. El modelo activo se cargará en la primera traducción.",
+    "translation_completed": "Traducción completada",
+    "streaming_translation": "Traducción en flujo",
+    "file_translation_completed": "La traducción de la imagen ha finalizado",
+    "history_item_deleted": "Elemento del historial eliminado",
+    "history_cleared": "Historial borrado",
+    "model_installed_load_on_first_translation": "Modelo instalado. El runtime se cargará en la primera traducción.",
+    "model_active": "Modelo activo",
+    "vision_runtime_active": "Runtime de visión activo",
+    "model_deleted": "Modelo eliminado",
+    "model_not_installed_locally": "El modelo no está instalado localmente",
+    "unknown_model_selection": "Selección de modelo desconocida",
+    "invalid_form_payload": "Datos de formulario no válidos",
+    "missing_history_id": "Falta el ID del historial",
+    "invalid_history_id": "ID de historial no válido",
+    "history_item_not_found": "No se encontró el elemento del historial",
+    "vision_runtime_unavailable": "El runtime q8_0_vision no está disponible",
+    "preparing_model_install": "Preparando la instalación del modelo",
+    "switching_active_model": "Cambiando el modelo activo",
+    "removing_local_model": "Eliminando el modelo local",
+    "downloading_vision_runtime": "Descargando el runtime q8_0_vision",
+    "preparing_active_model": "Preparando el modelo activo",
+    "active_runtime_no_image_support": "El runtime activo no admite traducción de imágenes. Cambia primero a q8_0_vision.",
+    "invalid_multipart_payload_or_file_too_large": "Carga multipart no válida o archivo demasiado grande.",
+    "missing_image_file": "Falta el archivo de imagen.",
+    "unable_to_read_image_file": "No se puede leer el archivo de imagen.",
+    "image_file_empty": "El archivo de imagen está vacío.",
+    "image_file_exceeds_size_limit": "El archivo de imagen supera el límite de tamaño.",
+    "unsupported_image_format": "Formato de imagen no compatible. Solo se permiten JPEG, PNG y GIF."
+  },
+  "errors": {
+    "failedLoadBootstrap": "No se pudo cargar el estado inicial",
+    "requestFailed": "La solicitud falló",
+    "streamFailed": "El flujo falló",
+    "imageTranslationFailed": "La traducción de la imagen falló",
+    "modelActionFailed": "La acción del modelo falló",
+    "historyDeleteFailed": "No se pudo eliminar el historial",
+    "historyClearFailed": "No se pudo borrar el historial"
+  },
+  "languages": {
+    "auto": "Detección automática",
+    "en": "Inglés",
+    "zh-CN": "Chino simplificado",
+    "ja": "Japonés",
+    "ko": "Coreano",
+    "de-DE": "Alemán",
+    "fr": "Francés",
+    "es": "Español",
+    "ru": "Ruso",
+    "ar": "Árabe"
+  }
+}

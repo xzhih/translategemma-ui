@@ -1,0 +1,179 @@
+{
+  "app": {
+    "title": "TranslateGemmaUI",
+    "loading": "Chargement de TranslateGemmaUI..."
+  },
+  "header": {
+    "goToTextScreen": "Aller à l’écran de traduction de texte",
+    "model": "Modèle",
+    "switchToChinese": "Passer l’interface en chinois",
+    "switchToChineseShort": "中文",
+    "switchToEnglish": "Passer l’interface en anglais",
+    "switchToEnglishShort": "EN"
+  },
+  "accessibility": {
+    "translationMode": "Mode de traduction",
+    "languageSelector": "Sélecteur de langue",
+    "uiLanguageSelector": "Langue de l’interface",
+    "swapLanguages": "Inverser la langue source et la langue cible"
+  },
+  "tabs": {
+    "text": "Texte",
+    "image": "Image"
+  },
+  "buttons": {
+    "history": "Historique",
+    "copy": "Copier",
+    "translate": "Traduire",
+    "translating": "Traduction en cours",
+    "loadingModel": "Chargement du modèle",
+    "delete": "Supprimer",
+    "download": "Télécharger",
+    "clearHistory": "Effacer l’historique",
+    "clearingHistory": "Effacement de l’historique",
+    "useNow": "Utiliser maintenant",
+    "selected": "Sélectionné",
+    "active": "ACTIF",
+    "reset": "Réinitialiser",
+    "chooseAnother": "Choisir une autre image",
+    "uploadImage": "Téléverser une image",
+    "switching": "Changement en cours",
+    "switchToVision": "Passer à q8_0_vision",
+    "copyResult": "Copier le résultat"
+  },
+  "instruction": {
+    "label": "Consigne supplémentaire",
+    "hint": "Ajoute ceci uniquement si tu veux imposer une formulation, un ton, une mise en forme ou une terminologie précise.",
+    "textPlaceholder": "Par exemple : conserver les noms de produits et les termes techniques tels quels.",
+    "imagePlaceholder": "Par exemple : conserver les noms de marque et préserver les retours à la ligne."
+  },
+  "textScreen": {
+    "sourceTextAria": "Texte source",
+    "sourceTextPlaceholder": "Saisis ou colle le texte à traduire...",
+    "resultPlaceholder": "Résultat...",
+    "instructionAria": "Consigne de traduction"
+  },
+  "imageScreen": {
+    "uploadAreaAria": "Zone de téléversement d’image",
+    "uploadInputAria": "Téléverser une image",
+    "requiresVisionTitle": "La traduction d’image nécessite q8_0_vision",
+    "requiresVisionHint": "Passe d’abord le runtime actif sur q8_0_vision avant de téléverser une image.",
+    "uploadTitle": "Téléverser une image",
+    "uploadHint": "Glisse une image ici ou choisis un fichier. PNG / JPG / GIF pris en charge, jusqu’à {{maxUploadMB}}MB.",
+    "replaceHint": "Dépose une autre image ici pour la remplacer, ou choisis un autre fichier.",
+    "previewAlt": "Aperçu de {{name}}",
+    "selectedPreviewAlt": "Aperçu de l’image sélectionnée",
+    "instructionAria": "Consigne de traduction d’image"
+  },
+  "model": {
+    "drawerTitle": "Liste des modèles",
+    "closeDrawer": "Fermer le tiroir des modèles",
+    "closeList": "Fermer la liste des modèles",
+    "listAria": "Éléments de la liste des modèles",
+    "capabilityVision": "Image",
+    "capabilityText": "Texte",
+    "recommended": "Recommandé",
+    "sourceInstalled": "Installé",
+    "sourceRemote": "Distant",
+    "state": {
+      "downloadRequired": {
+        "label": "Téléchargement requis",
+        "detail": "Aucun runtime local n’est encore installé."
+      },
+      "unavailable": {
+        "label": "Indisponible",
+        "detail": "Les métadonnées du modèle sont indisponibles."
+      },
+      "loaded": {
+        "label": "Chargé",
+        "detail": "Exécuté actuellement dans le runtime local."
+      },
+      "selected": {
+        "label": "Sélectionné",
+        "detail": "Sera chargé lors de la prochaine demande de traduction."
+      },
+      "installed": {
+        "label": "Installé",
+        "detail": "Disponible localement, mais non sélectionné actuellement."
+      },
+      "remote": {
+        "label": "Distant",
+        "detail": "Disponible dans le catalogue, mais pas encore téléchargé localement."
+      }
+    }
+  },
+  "history": {
+    "drawerTitle": "Historique",
+    "closeDrawer": "Fermer le tiroir d’historique",
+    "closeList": "Fermer l’historique",
+    "listAria": "Éléments de l’historique",
+    "detailTitle": "Détail de l’historique",
+    "closeDetail": "Fermer le détail",
+    "translationTime": "Heure de traduction",
+    "source": "Source",
+    "target": "Cible",
+    "sourceText": "Texte source",
+    "targetText": "Texte traduit"
+  },
+  "setup": {
+    "banner": "Aucun runtime local n’est encore installé. Ouvre le tiroir des modèles et télécharge d’abord q4_k_m ou q8_0_vision."
+  },
+  "messages": {
+    "fileTranslationCompleted": "Traduction d’image terminée"
+  },
+  "serverStatus": {
+    "ready": "Prêt",
+    "runtime_ready": "Runtime prêt",
+    "no_local_model_select_download": "Aucun modèle local installé. Sélectionne un modèle à télécharger.",
+    "runtime_idle_load_on_first_translation": "Runtime inactif. Le modèle actif sera chargé lors de la première traduction.",
+    "translation_completed": "Traduction terminée",
+    "streaming_translation": "Traduction en flux",
+    "file_translation_completed": "Traduction d’image terminée",
+    "history_item_deleted": "Élément d’historique supprimé",
+    "history_cleared": "Historique effacé",
+    "model_installed_load_on_first_translation": "Modèle installé. Le runtime sera chargé lors de la première traduction.",
+    "model_active": "Modèle actif",
+    "vision_runtime_active": "Runtime vision actif",
+    "model_deleted": "Modèle supprimé",
+    "model_not_installed_locally": "Le modèle n’est pas installé localement",
+    "unknown_model_selection": "Sélection de modèle inconnue",
+    "invalid_form_payload": "Données de formulaire invalides",
+    "missing_history_id": "ID d’historique manquant",
+    "invalid_history_id": "ID d’historique invalide",
+    "history_item_not_found": "Élément d’historique introuvable",
+    "vision_runtime_unavailable": "Le runtime q8_0_vision n’est pas disponible",
+    "preparing_model_install": "Préparation de l’installation du modèle",
+    "switching_active_model": "Changement du modèle actif",
+    "removing_local_model": "Suppression du modèle local",
+    "downloading_vision_runtime": "Téléchargement du runtime q8_0_vision",
+    "preparing_active_model": "Préparation du modèle actif",
+    "active_runtime_no_image_support": "Le runtime actif ne prend pas en charge la traduction d’image. Passe d’abord à q8_0_vision.",
+    "invalid_multipart_payload_or_file_too_large": "Charge multipart invalide ou fichier trop volumineux.",
+    "missing_image_file": "Fichier image manquant.",
+    "unable_to_read_image_file": "Impossible de lire le fichier image.",
+    "image_file_empty": "Le fichier image est vide.",
+    "image_file_exceeds_size_limit": "Le fichier image dépasse la limite de taille.",
+    "unsupported_image_format": "Format d’image non pris en charge. Seuls JPEG, PNG et GIF sont autorisés."
+  },
+  "errors": {
+    "failedLoadBootstrap": "Impossible de charger l’état initial",
+    "requestFailed": "Échec de la requête",
+    "streamFailed": "Échec du flux",
+    "imageTranslationFailed": "Échec de la traduction d’image",
+    "modelActionFailed": "Échec de l’action sur le modèle",
+    "historyDeleteFailed": "Échec de la suppression de l’historique",
+    "historyClearFailed": "Échec de l’effacement de l’historique"
+  },
+  "languages": {
+    "auto": "Détection automatique",
+    "en": "Anglais",
+    "zh-CN": "Chinois (simplifié)",
+    "ja": "Japonais",
+    "ko": "Coréen",
+    "de-DE": "Allemand",
+    "fr": "Français",
+    "es": "Espagnol",
+    "ru": "Russe",
+    "ar": "Arabe"
+  }
+}

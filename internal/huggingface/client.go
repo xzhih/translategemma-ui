@@ -1,0 +1,511 @@
+package huggingface
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"translategemma-ui/internal/models"
+)
+
+const (
+	runtimeRepo           = "xzhih/translategemma-4b-it-llamafile"
+	runtimeManifestURL    = "https://huggingface.co/" + runtimeRepo + "/resolve/main/manifest-v1.json"
+	localManifestEnv      = "TRANSLATEGEMMA_UI_MANIFEST_PATH"
+	hfTokenEnv            = "HF_TOKEN"
+	hfHubTokenEnv         = "HUGGINGFACE_HUB_TOKEN"
+	cacheTTL              = 5 * time.Minute
+	listTimeout           = 20 * time.Second
+	downloadTimeout       = 90 * time.Minute
+	runtimeSubdir         = "runtimes"
+	publisherManifestHint = "translategemma-runtime-publisher/dist/translategemma-4b-it/manifest-v1.json"
+)
+
+type manifest struct {
+	Models []manifestModel `json:"models"`
+}
+
+type manifestModel struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+	Recommended bool   `json:"recommended"`
+	Features    struct {
+		Vision bool `json:"vision"`
+	} `json:"features"`
+	Runtime struct {
+		Llamafile struct {
+			FileName   string `json:"file_name"`
+			PathInRepo string `json:"path_in_repo"`
+			SizeBytes  int64  `json:"size_bytes"`
+		} `json:"llamafile"`
+	} `json:"runtime"`
+}
+
+type DownloadProgress struct {
+	Downloaded int64
+	Total      int64
+	Percent    float64
+	Message    string
+}
+
+var (
+	cacheMu         sync.Mutex
+	cachedArtifacts []models.QuantizedModel
+	cacheAt         time.Time
+)
+
+// ListTranslateGemmaModels returns the supported packaged runtimes.
+func ListTranslateGemmaModels() []models.QuantizedModel {
+	return listArtifacts()
+}
+
+// RecommendedVisionRuntime returns the supported vision runtime SKU.
+func RecommendedVisionRuntime() (models.QuantizedModel, bool) {
+	for _, item := range listArtifacts() {
+		if supportsVision(item) {
+			return item, true
+		}
+	}
+	return models.QuantizedModel{}, false
+}
+
+// DownloadModel downloads or copies a runtime artifact into the local app data root.
+func DownloadModel(dataRoot string, item models.QuantizedModel, onProgress func(DownloadProgress)) (string, error) {
+	return DownloadModelWithContext(context.Background(), dataRoot, item, onProgress)
+}
+
+// DownloadModelWithContext downloads or copies a runtime artifact into the local app data root.
+func DownloadModelWithContext(ctx context.Context, dataRoot string, item models.QuantizedModel, onProgress func(DownloadProgress)) (string, error) {
+	if item.FileName == "" {
+		return "", fmt.Errorf("invalid artifact: empty file name")
+	}
+	downloadURL := strings.TrimSpace(item.DownloadURL)
+	if downloadURL == "" {
+		return "", fmt.Errorf("invalid artifact: missing download URL")
+	}
+
+	dstDir := filepath.Join(dataRoot, runtimeSubdir)
+	if err := os.MkdirAll(dstDir, 0o755); err != nil {
+		return "", err
+	}
+	dstPath := filepath.Join(dstDir, item.FileName)
+
+	if st, err := os.Stat(dstPath); err == nil && st.Mode().IsRegular() {
+		if item.SizeBytes <= 0 || st.Size() >= item.SizeBytes {
+			reportDownload(onProgress, st.Size(), item.SizeBytes, "Artifact already exists locally")
+			return dstPath, nil
+		}
+	}
+
+	ctx, cancel := withDownloadTimeout(ctx)
+	defer cancel()
+
+	if srcPath, ok := localFileSource(downloadURL); ok {
+		return copyLocalArtifact(ctx, srcPath, dstPath, item.SizeBytes, onProgress)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+	if err != nil {
+		return "", err
+	}
+	applyAuth(req)
+	resp, err := (&http.Client{Timeout: 0}).Do(req)
+	if err != nil {
+		return "", fmt.Errorf("download request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return "", fmt.Errorf("download failed: %s %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+
+	return writeDownloadedArtifact(ctx, resp.Body, dstPath, resp.ContentLength, item.SizeBytes, onProgress)
+}
+
+func listArtifacts() []models.QuantizedModel {
+	cacheMu.Lock()
+	if time.Since(cacheAt) < cacheTTL && len(cachedArtifacts) > 0 {
+		out := make([]models.QuantizedModel, len(cachedArtifacts))
+		copy(out, cachedArtifacts)
+		cacheMu.Unlock()
+		return out
+	}
+	cacheMu.Unlock()
+
+	artifacts, err := fetchArtifacts()
+	if err != nil {
+		cacheMu.Lock()
+		defer cacheMu.Unlock()
+		if len(cachedArtifacts) == 0 {
+			return builtinCatalog()
+		}
+		out := make([]models.QuantizedModel, len(cachedArtifacts))
+		copy(out, cachedArtifacts)
+		return out
+	}
+
+	cacheMu.Lock()
+	cachedArtifacts = make([]models.QuantizedModel, len(artifacts))
+	copy(cachedArtifacts, artifacts)
+	cacheAt = time.Now()
+	cacheMu.Unlock()
+
+	out := make([]models.QuantizedModel, len(artifacts))
+	copy(out, artifacts)
+	return out
+}
+
+func fetchArtifacts() ([]models.QuantizedModel, error) {
+	if manifestPath := resolveLocalManifest(); manifestPath != "" {
+		return parseManifestFile(manifestPath)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), listTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, runtimeManifestURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	applyAuth(req)
+	resp, err := (&http.Client{Timeout: listTimeout}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return nil, fmt.Errorf("runtime manifest fetch failed: %s %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+
+	var doc manifest
+	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+		return nil, err
+	}
+	return manifestToCatalog(doc, "")
+}
+
+func parseManifestFile(path string) ([]models.QuantizedModel, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var doc manifest
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil, err
+	}
+	return manifestToCatalog(doc, filepath.Dir(path))
+}
+
+func manifestToCatalog(doc manifest, localBase string) ([]models.QuantizedModel, error) {
+	if len(doc.Models) == 0 {
+		return nil, fmt.Errorf("runtime manifest does not contain models")
+	}
+
+	out := make([]models.QuantizedModel, 0, len(doc.Models))
+	for _, entry := range doc.Models {
+		fileName := strings.TrimSpace(entry.Runtime.Llamafile.FileName)
+		pathInRepo := strings.TrimSpace(entry.Runtime.Llamafile.PathInRepo)
+		if fileName == "" || pathInRepo == "" {
+			continue
+		}
+
+		downloadURL := buildRuntimeDownloadURL(pathInRepo)
+		if localBase != "" {
+			downloadURL = "file://" + filepath.Join(localBase, filepath.FromSlash(pathInRepo))
+		}
+
+		out = append(out, models.QuantizedModel{
+			ID:          strings.TrimSpace(entry.ID),
+			Kind:        "model",
+			FileName:    fileName,
+			Size:        humanSize(entry.Runtime.Llamafile.SizeBytes),
+			SizeBytes:   entry.Runtime.Llamafile.SizeBytes,
+			DownloadURL: downloadURL,
+			Recommended: entry.Recommended,
+		})
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("runtime manifest did not produce usable runtimes")
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		return catalogRank(out[i]) < catalogRank(out[j])
+	})
+	return out, nil
+}
+
+func builtinCatalog() []models.QuantizedModel {
+	items := []models.QuantizedModel{
+		{
+			ID:          "q4_k_m",
+			Kind:        "model",
+			FileName:    "translategemma-4b-it.Q4_K_M.llamafile",
+			SizeBytes:   2532719437,
+			DownloadURL: buildRuntimeDownloadURL("translategemma-4b-it.Q4_K_M.llamafile"),
+			Recommended: true,
+		},
+		{
+			ID:          "q6_k",
+			Kind:        "model",
+			FileName:    "translategemma-4b-it.Q6_K.llamafile",
+			SizeBytes:   3233561417,
+			DownloadURL: buildRuntimeDownloadURL("translategemma-4b-it.Q6_K.llamafile"),
+		},
+		{
+			ID:          "q8_0",
+			Kind:        "model",
+			FileName:    "translategemma-4b-it.Q8_0.llamafile",
+			SizeBytes:   4173216585,
+			DownloadURL: buildRuntimeDownloadURL("translategemma-4b-it.Q8_0.llamafile"),
+		},
+		{
+			ID:          "q8_0_vision",
+			Kind:        "model",
+			FileName:    "translategemma-4b-it.Q8_0.mmproj-Q8_0.llamafile",
+			SizeBytes:   4764613607,
+			DownloadURL: buildRuntimeDownloadURL("translategemma-4b-it.Q8_0.mmproj-Q8_0.llamafile"),
+			Recommended: true,
+		},
+	}
+	for i := range items {
+		items[i].Size = humanSize(items[i].SizeBytes)
+	}
+	return items
+}
+
+func resolveLocalManifest() string {
+	if envPath := strings.TrimSpace(os.Getenv(localManifestEnv)); envPath != "" && fileExists(envPath) {
+		return envPath
+	}
+
+	candidates := []string{}
+	if cwd, err := os.Getwd(); err == nil {
+		candidates = append(candidates, filepath.Join(cwd, "..", publisherManifestHint))
+		candidates = append(candidates, filepath.Join(cwd, publisherManifestHint))
+	}
+	if exe, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exe)
+		candidates = append(candidates, filepath.Join(exeDir, "..", publisherManifestHint))
+		candidates = append(candidates, filepath.Join(exeDir, "..", "..", publisherManifestHint))
+	}
+	seen := map[string]struct{}{}
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		candidate = filepath.Clean(candidate)
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		if fileExists(candidate) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func buildRuntimeDownloadURL(pathInRepo string) string {
+	parts := strings.Split(pathInRepo, "/")
+	for i := range parts {
+		parts[i] = url.PathEscape(parts[i])
+	}
+	return "https://huggingface.co/" + runtimeRepo + "/resolve/main/" + strings.Join(parts, "/")
+}
+
+func supportsVision(item models.QuantizedModel) bool {
+	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(item.ID)), "_vision") ||
+		strings.Contains(strings.ToLower(item.FileName), ".mmproj-")
+}
+
+func catalogRank(item models.QuantizedModel) string {
+	switch item.ID {
+	case "q4_k_m":
+		return "1"
+	case "q6_k":
+		return "2"
+	case "q8_0":
+		return "3"
+	case "q8_0_vision":
+		return "4"
+	default:
+		return "9:" + item.ID
+	}
+}
+
+func localFileSource(downloadURL string) (string, bool) {
+	if strings.HasPrefix(downloadURL, "file://") {
+		return strings.TrimPrefix(downloadURL, "file://"), true
+	}
+	if filepath.IsAbs(downloadURL) && fileExists(downloadURL) {
+		return downloadURL, true
+	}
+	return "", false
+}
+
+func copyLocalArtifact(ctx context.Context, srcPath, dstPath string, sizeBytes int64, onProgress func(DownloadProgress)) (string, error) {
+	if !fileExists(srcPath) {
+		return "", fmt.Errorf("local runtime artifact not found: %s", srcPath)
+	}
+	in, err := os.Open(srcPath)
+	if err != nil {
+		return "", err
+	}
+	defer in.Close()
+
+	if st, err := in.Stat(); err == nil && sizeBytes <= 0 {
+		sizeBytes = st.Size()
+	}
+	reportDownload(onProgress, 0, sizeBytes, "Copying local runtime artifact")
+	return writeDownloadedArtifact(ctx, in, dstPath, sizeBytes, sizeBytes, onProgress)
+}
+
+func writeDownloadedArtifact(ctx context.Context, src io.Reader, dstPath string, contentLength, sizeBytes int64, onProgress func(DownloadProgress)) (string, error) {
+	tmpPath := dstPath + ".partial"
+	_ = os.Remove(tmpPath)
+
+	out, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
+	if err != nil {
+		return "", err
+	}
+
+	total := contentLength
+	if total <= 0 {
+		total = sizeBytes
+	}
+
+	buf := make([]byte, 1024*1024)
+	var downloaded int64
+	reportDownload(onProgress, 0, total, "Downloading artifact")
+	for {
+		if err := ctx.Err(); err != nil {
+			_ = out.Close()
+			_ = os.Remove(tmpPath)
+			return "", err
+		}
+		n, readErr := src.Read(buf)
+		if n > 0 {
+			wn, writeErr := out.Write(buf[:n])
+			downloaded += int64(wn)
+			reportDownload(onProgress, downloaded, total, "Downloading artifact")
+			if writeErr != nil {
+				_ = out.Close()
+				_ = os.Remove(tmpPath)
+				return "", writeErr
+			}
+			if wn != n {
+				_ = out.Close()
+				_ = os.Remove(tmpPath)
+				return "", io.ErrShortWrite
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			_ = out.Close()
+			_ = os.Remove(tmpPath)
+			return "", readErr
+		}
+	}
+	if err := out.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", err
+	}
+
+	if sizeBytes > 0 {
+		st, err := os.Stat(tmpPath)
+		if err != nil {
+			_ = os.Remove(tmpPath)
+			return "", err
+		}
+		if st.Size() < sizeBytes {
+			_ = os.Remove(tmpPath)
+			return "", fmt.Errorf("download incomplete: got %d bytes, expected %d", st.Size(), sizeBytes)
+		}
+	}
+
+	if err := os.Rename(tmpPath, dstPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", err
+	}
+	finalSize := totalOr(sizeBytes, downloaded)
+	reportDownload(onProgress, finalSize, finalSize, "Download completed")
+	return dstPath, nil
+}
+
+func withDownloadTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		return context.WithTimeout(context.Background(), downloadTimeout)
+	}
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, downloadTimeout)
+}
+
+func applyAuth(req *http.Request) {
+	if req == nil {
+		return
+	}
+	if token := strings.TrimSpace(os.Getenv(hfTokenEnv)); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+		return
+	}
+	if token := strings.TrimSpace(os.Getenv(hfHubTokenEnv)); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+}
+
+func reportDownload(cb func(DownloadProgress), downloaded, total int64, msg string) {
+	if cb == nil {
+		return
+	}
+	percent := 0.0
+	if total > 0 {
+		percent = (float64(downloaded) / float64(total)) * 100
+		if percent > 100 {
+			percent = 100
+		}
+	}
+	cb(DownloadProgress{
+		Downloaded: downloaded,
+		Total:      total,
+		Percent:    percent,
+		Message:    msg,
+	})
+}
+
+func totalOr(v, fallback int64) int64 {
+	if v > 0 {
+		return v
+	}
+	return fallback
+}
+
+func humanSize(n int64) string {
+	if n <= 0 {
+		return "unknown"
+	}
+	const gb = 1024 * 1024 * 1024
+	const mb = 1024 * 1024
+	if n >= gb {
+		return fmt.Sprintf("%.1f GB", float64(n)/float64(gb))
+	}
+	return fmt.Sprintf("%.0f MB", float64(n)/float64(mb))
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}

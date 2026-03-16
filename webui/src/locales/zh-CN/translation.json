@@ -1,0 +1,179 @@
+{
+  "app": {
+    "title": "TranslateGemmaUI",
+    "loading": "正在加载 TranslateGemmaUI..."
+  },
+  "header": {
+    "goToTextScreen": "切换到文本翻译页",
+    "model": "模型",
+    "switchToChinese": "将界面语言切换为中文",
+    "switchToChineseShort": "中文",
+    "switchToEnglish": "将界面语言切换为英文",
+    "switchToEnglishShort": "EN"
+  },
+  "accessibility": {
+    "translationMode": "翻译模式",
+    "languageSelector": "语言选择器",
+    "uiLanguageSelector": "界面语言",
+    "swapLanguages": "交换源语言和目标语言"
+  },
+  "tabs": {
+    "text": "文本",
+    "image": "图片"
+  },
+  "buttons": {
+    "history": "历史",
+    "copy": "复制",
+    "translate": "翻译",
+    "translating": "翻译中",
+    "loadingModel": "正在加载模型",
+    "delete": "删除",
+    "download": "下载",
+    "clearHistory": "清空历史",
+    "clearingHistory": "正在清空历史",
+    "useNow": "立即使用",
+    "selected": "已选中",
+    "active": "当前使用",
+    "reset": "重置",
+    "chooseAnother": "重新选择",
+    "uploadImage": "上传图片",
+    "switching": "切换中",
+    "switchToVision": "切换到 q8_0_vision",
+    "copyResult": "复制结果"
+  },
+  "instruction": {
+    "label": "附加说明",
+    "hint": "只有在你希望指定措辞、语气、格式或术语时，才需要填写这里。",
+    "textPlaceholder": "例如：保留产品名和技术术语，不要翻译。",
+    "imagePlaceholder": "例如：保留品牌名不变，并尽量保留换行格式。"
+  },
+  "textScreen": {
+    "sourceTextAria": "源文本",
+    "sourceTextPlaceholder": "输入或粘贴要翻译的文本...",
+    "resultPlaceholder": "翻译结果...",
+    "instructionAria": "翻译说明"
+  },
+  "imageScreen": {
+    "uploadAreaAria": "图片上传区域",
+    "uploadInputAria": "上传图片",
+    "requiresVisionTitle": "图片翻译需要 q8_0_vision",
+    "requiresVisionHint": "上传图片前，请先切换到 q8_0_vision 运行时。",
+    "uploadTitle": "上传图片",
+    "uploadHint": "将图片拖到这里，或手动选择文件。支持 PNG / JPG / GIF，最大 {{maxUploadMB}}MB。",
+    "replaceHint": "可以拖入另一张图片进行替换，或重新选择文件。",
+    "previewAlt": "{{name}} 的预览图",
+    "selectedPreviewAlt": "已选图片预览",
+    "instructionAria": "图片翻译说明"
+  },
+  "model": {
+    "drawerTitle": "模型列表",
+    "closeDrawer": "关闭模型抽屉",
+    "closeList": "关闭模型列表",
+    "listAria": "模型列表项",
+    "capabilityVision": "视觉",
+    "capabilityText": "文本",
+    "recommended": "推荐",
+    "sourceInstalled": "已下载",
+    "sourceRemote": "远程",
+    "state": {
+      "downloadRequired": {
+        "label": "需要下载",
+        "detail": "本地还没有安装任何运行时。"
+      },
+      "unavailable": {
+        "label": "不可用",
+        "detail": "模型元数据不可用。"
+      },
+      "loaded": {
+        "label": "已加载",
+        "detail": "当前已在本地运行时中运行。"
+      },
+      "selected": {
+        "label": "已选中",
+        "detail": "会在下一次翻译请求时加载。"
+      },
+      "installed": {
+        "label": "已下载",
+        "detail": "已经在本地，但当前未选中。"
+      },
+      "remote": {
+        "label": "远程",
+        "detail": "目录中可用，但尚未下载到本地。"
+      }
+    }
+  },
+  "history": {
+    "drawerTitle": "历史记录",
+    "closeDrawer": "关闭历史抽屉",
+    "closeList": "关闭历史记录",
+    "listAria": "历史记录列表",
+    "detailTitle": "历史详情",
+    "closeDetail": "关闭详情",
+    "translationTime": "翻译时间",
+    "source": "源语言",
+    "target": "目标语言",
+    "sourceText": "原文",
+    "targetText": "译文"
+  },
+  "setup": {
+    "banner": "本地还没有安装运行时。请打开模型抽屉，先下载 q4_k_m 或 q8_0_vision。"
+  },
+  "messages": {
+    "fileTranslationCompleted": "图片翻译完成"
+  },
+  "serverStatus": {
+    "ready": "就绪",
+    "runtime_ready": "运行时已就绪",
+    "no_local_model_select_download": "本地还没有安装模型。请先选择一个模型进行下载。",
+    "runtime_idle_load_on_first_translation": "运行时空闲。当前模型会在第一次翻译时加载。",
+    "translation_completed": "翻译完成",
+    "streaming_translation": "正在流式翻译",
+    "file_translation_completed": "图片翻译完成",
+    "history_item_deleted": "历史记录已删除",
+    "history_cleared": "历史记录已清空",
+    "model_installed_load_on_first_translation": "模型已安装，将在第一次翻译时加载运行时。",
+    "model_active": "模型已激活",
+    "vision_runtime_active": "视觉运行时已激活",
+    "model_deleted": "模型已删除",
+    "model_not_installed_locally": "该模型尚未下载到本地",
+    "unknown_model_selection": "未知的模型选择",
+    "invalid_form_payload": "表单内容无效",
+    "missing_history_id": "缺少历史记录 ID",
+    "invalid_history_id": "历史记录 ID 无效",
+    "history_item_not_found": "未找到历史记录",
+    "vision_runtime_unavailable": "q8_0_vision 运行时不可用",
+    "preparing_model_install": "正在准备安装模型",
+    "switching_active_model": "正在切换当前模型",
+    "removing_local_model": "正在移除本地模型",
+    "downloading_vision_runtime": "正在下载 q8_0_vision 运行时",
+    "preparing_active_model": "正在准备当前模型",
+    "active_runtime_no_image_support": "当前运行时不支持图片翻译。请先切换到 q8_0_vision。",
+    "invalid_multipart_payload_or_file_too_large": "上传内容无效，或者文件过大。",
+    "missing_image_file": "缺少图片文件。",
+    "unable_to_read_image_file": "无法读取图片文件。",
+    "image_file_empty": "图片文件为空。",
+    "image_file_exceeds_size_limit": "图片文件超过大小限制。",
+    "unsupported_image_format": "图片格式不受支持，仅允许 JPEG、PNG 和 GIF。"
+  },
+  "errors": {
+    "failedLoadBootstrap": "加载初始化状态失败",
+    "requestFailed": "请求失败",
+    "streamFailed": "流式请求失败",
+    "imageTranslationFailed": "图片翻译失败",
+    "modelActionFailed": "模型操作失败",
+    "historyDeleteFailed": "删除历史失败",
+    "historyClearFailed": "清空历史失败"
+  },
+  "languages": {
+    "auto": "自动检测",
+    "en": "英语",
+    "zh-CN": "简体中文",
+    "ja": "日语",
+    "ko": "韩语",
+    "de-DE": "德语",
+    "fr": "法语",
+    "es": "西班牙语",
+    "ru": "俄语",
+    "ar": "阿拉伯语"
+  }
+}

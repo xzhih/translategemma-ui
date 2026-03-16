@@ -1,0 +1,179 @@
+{
+  "app": {
+    "title": "TranslateGemmaUI",
+    "loading": "TranslateGemmaUI를 불러오는 중..."
+  },
+  "header": {
+    "goToTextScreen": "텍스트 번역 화면으로 이동",
+    "model": "모델",
+    "switchToChinese": "UI 언어를 중국어로 전환",
+    "switchToChineseShort": "中文",
+    "switchToEnglish": "UI 언어를 영어로 전환",
+    "switchToEnglishShort": "EN"
+  },
+  "accessibility": {
+    "translationMode": "번역 모드",
+    "languageSelector": "언어 선택기",
+    "uiLanguageSelector": "UI 언어",
+    "swapLanguages": "원문 언어와 대상 언어 바꾸기"
+  },
+  "tabs": {
+    "text": "텍스트",
+    "image": "이미지"
+  },
+  "buttons": {
+    "history": "기록",
+    "copy": "복사",
+    "translate": "번역",
+    "translating": "번역 중",
+    "loadingModel": "모델 로딩 중",
+    "delete": "삭제",
+    "download": "다운로드",
+    "clearHistory": "기록 비우기",
+    "clearingHistory": "기록 비우는 중",
+    "useNow": "지금 사용",
+    "selected": "선택됨",
+    "active": "ACTIVE",
+    "reset": "초기화",
+    "chooseAnother": "다른 이미지 선택",
+    "uploadImage": "이미지 업로드",
+    "switching": "전환 중",
+    "switchToVision": "q8_0_vision으로 전환",
+    "copyResult": "결과 복사"
+  },
+  "instruction": {
+    "label": "추가 지침",
+    "hint": "표현, 어조, 형식, 용어를 따로 지정하고 싶을 때만 입력하세요.",
+    "textPlaceholder": "예: 제품명과 기술 용어는 그대로 유지하세요.",
+    "imagePlaceholder": "예: 브랜드명은 유지하고 줄바꿈도 최대한 보존하세요."
+  },
+  "textScreen": {
+    "sourceTextAria": "원문",
+    "sourceTextPlaceholder": "번역할 텍스트를 입력하거나 붙여넣으세요...",
+    "resultPlaceholder": "결과...",
+    "instructionAria": "번역 지침"
+  },
+  "imageScreen": {
+    "uploadAreaAria": "이미지 업로드 영역",
+    "uploadInputAria": "이미지 업로드",
+    "requiresVisionTitle": "이미지 번역에는 q8_0_vision이 필요합니다",
+    "requiresVisionHint": "이미지를 업로드하기 전에 활성 런타임을 q8_0_vision으로 전환하세요.",
+    "uploadTitle": "이미지 업로드",
+    "uploadHint": "여기에 이미지를 끌어다 놓거나 파일을 선택하세요. PNG / JPG / GIF를 지원하며 최대 {{maxUploadMB}}MB까지 가능합니다.",
+    "replaceHint": "다른 이미지를 놓아 교체하거나 다른 파일을 선택하세요.",
+    "previewAlt": "{{name}} 미리보기",
+    "selectedPreviewAlt": "선택한 이미지 미리보기",
+    "instructionAria": "이미지 번역 지침"
+  },
+  "model": {
+    "drawerTitle": "모델 목록",
+    "closeDrawer": "모델 드로어 닫기",
+    "closeList": "모델 목록 닫기",
+    "listAria": "모델 목록 항목",
+    "capabilityVision": "이미지",
+    "capabilityText": "텍스트",
+    "recommended": "추천",
+    "sourceInstalled": "설치됨",
+    "sourceRemote": "원격",
+    "state": {
+      "downloadRequired": {
+        "label": "다운로드 필요",
+        "detail": "로컬 런타임이 아직 설치되지 않았습니다."
+      },
+      "unavailable": {
+        "label": "사용 불가",
+        "detail": "모델 메타데이터를 사용할 수 없습니다."
+      },
+      "loaded": {
+        "label": "로드됨",
+        "detail": "현재 로컬 런타임에서 실행 중입니다."
+      },
+      "selected": {
+        "label": "선택됨",
+        "detail": "다음 번역 요청 시 로드됩니다."
+      },
+      "installed": {
+        "label": "설치됨",
+        "detail": "로컬에는 있지만 현재 선택되지는 않았습니다."
+      },
+      "remote": {
+        "label": "원격",
+        "detail": "카탈로그에는 있지만 아직 로컬에 다운로드되지 않았습니다."
+      }
+    }
+  },
+  "history": {
+    "drawerTitle": "기록",
+    "closeDrawer": "기록 드로어 닫기",
+    "closeList": "기록 닫기",
+    "listAria": "기록 목록",
+    "detailTitle": "기록 상세",
+    "closeDetail": "상세 닫기",
+    "translationTime": "번역 시각",
+    "source": "원문 언어",
+    "target": "대상 언어",
+    "sourceText": "원문",
+    "targetText": "번역문"
+  },
+  "setup": {
+    "banner": "로컬 런타임이 아직 설치되지 않았습니다. 모델 드로어를 열어 먼저 q4_k_m 또는 q8_0_vision을 다운로드하세요."
+  },
+  "messages": {
+    "fileTranslationCompleted": "이미지 번역이 완료되었습니다"
+  },
+  "serverStatus": {
+    "ready": "준비 완료",
+    "runtime_ready": "런타임 준비 완료",
+    "no_local_model_select_download": "로컬에 설치된 모델이 없습니다. 다운로드할 모델을 선택하세요.",
+    "runtime_idle_load_on_first_translation": "런타임이 대기 중입니다. 활성 모델은 첫 번째 번역 요청 때 로드됩니다.",
+    "translation_completed": "번역이 완료되었습니다",
+    "streaming_translation": "스트리밍 번역 중",
+    "file_translation_completed": "이미지 번역이 완료되었습니다",
+    "history_item_deleted": "기록 항목을 삭제했습니다",
+    "history_cleared": "기록을 비웠습니다",
+    "model_installed_load_on_first_translation": "모델이 설치되었습니다. 런타임은 첫 번째 번역 때 로드됩니다.",
+    "model_active": "모델이 활성화되었습니다",
+    "vision_runtime_active": "비전 런타임이 활성화되었습니다",
+    "model_deleted": "모델을 삭제했습니다",
+    "model_not_installed_locally": "모델이 로컬에 설치되어 있지 않습니다",
+    "unknown_model_selection": "알 수 없는 모델 선택입니다",
+    "invalid_form_payload": "폼 데이터가 잘못되었습니다",
+    "missing_history_id": "기록 ID가 없습니다",
+    "invalid_history_id": "기록 ID가 잘못되었습니다",
+    "history_item_not_found": "기록 항목을 찾을 수 없습니다",
+    "vision_runtime_unavailable": "q8_0_vision 런타임을 사용할 수 없습니다",
+    "preparing_model_install": "모델 설치 준비 중",
+    "switching_active_model": "활성 모델 전환 중",
+    "removing_local_model": "로컬 모델 삭제 중",
+    "downloading_vision_runtime": "q8_0_vision 런타임 다운로드 중",
+    "preparing_active_model": "활성 모델 준비 중",
+    "active_runtime_no_image_support": "현재 런타임은 이미지 번역을 지원하지 않습니다. 먼저 q8_0_vision으로 전환하세요.",
+    "invalid_multipart_payload_or_file_too_large": "멀티파트 데이터가 잘못되었거나 파일이 너무 큽니다.",
+    "missing_image_file": "이미지 파일이 없습니다.",
+    "unable_to_read_image_file": "이미지 파일을 읽을 수 없습니다.",
+    "image_file_empty": "이미지 파일이 비어 있습니다.",
+    "image_file_exceeds_size_limit": "이미지 파일이 크기 제한을 초과했습니다.",
+    "unsupported_image_format": "지원되지 않는 이미지 형식입니다. JPEG, PNG, GIF만 사용할 수 있습니다."
+  },
+  "errors": {
+    "failedLoadBootstrap": "초기 상태를 불러오지 못했습니다",
+    "requestFailed": "요청에 실패했습니다",
+    "streamFailed": "스트림 처리에 실패했습니다",
+    "imageTranslationFailed": "이미지 번역에 실패했습니다",
+    "modelActionFailed": "모델 작업에 실패했습니다",
+    "historyDeleteFailed": "기록 삭제에 실패했습니다",
+    "historyClearFailed": "기록 비우기에 실패했습니다"
+  },
+  "languages": {
+    "auto": "자동 감지",
+    "en": "영어",
+    "zh-CN": "중국어(간체)",
+    "ja": "일본어",
+    "ko": "한국어",
+    "de-DE": "독일어",
+    "fr": "프랑스어",
+    "es": "스페인어",
+    "ru": "러시아어",
+    "ar": "아랍어"
+  }
+}
