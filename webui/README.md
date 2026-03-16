@@ -1,6 +1,6 @@
 # TranslateGemma WebUI
 
-React + Vite front-end rebuilt from `design/webui-v1.pen`.
+React + Vite front-end for the embedded TranslateGemma Web UI.
 
 ## Commands
 
