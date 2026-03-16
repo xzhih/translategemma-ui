@@ -11,6 +11,7 @@ import (
 	"translategemma-ui/internal/models"
 	"translategemma-ui/internal/modelstore"
 	"translategemma-ui/internal/tui"
+	"translategemma-ui/internal/version"
 	"translategemma-ui/internal/web"
 )
 
@@ -25,10 +26,11 @@ func Run(args []string) error {
 
 	fs := flag.NewFlagSet("translategemma-ui", flag.ContinueOnError)
 	var (
-		tuiMode  bool
-		webMode  bool
-		listen   string
-		showHelp bool
+		tuiMode     bool
+		webMode     bool
+		listen      string
+		showHelp    bool
+		showVersion bool
 	)
 
 	fs.BoolVar(&tuiMode, "tui", false, "Run Bubble Tea interface")
@@ -36,12 +38,17 @@ func Run(args []string) error {
 	fs.StringVar(&listen, "listen", "127.0.0.1:8090", "Web UI listen address")
 	fs.BoolVar(&showHelp, "help", false, "Show help")
 	fs.BoolVar(&showHelp, "h", false, "Show help")
+	fs.BoolVar(&showVersion, "version", false, "Print version")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if showHelp {
 		printUsage(fs)
+		return nil
+	}
+	if showVersion {
+		fmt.Println(version.String())
 		return nil
 	}
 	if tuiMode && webMode {
@@ -193,13 +200,15 @@ func upsertArtifact(state *config.AppState, next config.InstalledArtifact) {
 
 func printUsage(fs *flag.FlagSet) {
 	fmt.Println("TranslateGemmaUI")
+	fmt.Println(version.String())
 	fmt.Println()
 	fmt.Println("Usage:")
-	fmt.Printf("  %s [--tui | --webui] [flags]\n", fs.Name())
+	fmt.Printf("  %s [--tui | --webui | --version] [flags]\n", fs.Name())
 	fmt.Printf("  %s translate [text|image] [flags]\n", fs.Name())
 	fmt.Printf("  %s models [list|download|delete] [flags]\n", fs.Name())
 	fmt.Println()
 	fmt.Println("Examples:")
+	fmt.Printf("  %s --version\n", fs.Name())
 	fmt.Printf("  %s --tui\n", fs.Name())
 	fmt.Printf("  %s --webui --listen 127.0.0.1:8090\n", fs.Name())
 	fmt.Printf("  %s translate text --text 'Hello world'\n", fs.Name())

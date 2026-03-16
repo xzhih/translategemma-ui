@@ -1,0 +1,55 @@
+version: 2
+
+project_name: translategemma-ui
+dist: dist
+
+before:
+  hooks:
+    - ./tools/sync_webui_dist.sh
+
+builds:
+  - id: translategemma-ui
+    main: ./cmd/translategemma-ui
+    binary: translategemma-ui
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X translategemma-ui/internal/version.Version={{ .Version }} -X translategemma-ui/internal/version.Commit={{ .Commit }} -X translategemma-ui/internal/version.Date={{ .Date }}
+
+archives:
+  - id: release-archives
+    ids:
+      - translategemma-ui
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+
+snapshot:
+  version_template: "{{ .Version }}-snapshot"
+
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: xzhih
+    name: translategemma-ui

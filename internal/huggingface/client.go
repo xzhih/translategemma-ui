@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"translategemma-ui/internal/models"
+	"translategemma-ui/internal/platform"
 )
 
 const (
@@ -97,12 +98,15 @@ func DownloadModelWithContext(ctx context.Context, dataRoot string, item models.
 	if err := os.MkdirAll(dstDir, 0o755); err != nil {
 		return "", err
 	}
-	dstPath := filepath.Join(dstDir, item.FileName)
-
-	if st, err := os.Stat(dstPath); err == nil && st.Mode().IsRegular() {
-		if item.SizeBytes <= 0 || st.Size() >= item.SizeBytes {
+	dstPath, existingPath, err := resolveRuntimeDestination(dstDir, item.FileName, item.SizeBytes)
+	if err != nil {
+		return "", err
+	}
+	if existingPath != "" {
+		st, statErr := os.Stat(existingPath)
+		if statErr == nil && st.Mode().IsRegular() {
 			reportDownload(onProgress, st.Size(), item.SizeBytes, "Artifact already exists locally")
-			return dstPath, nil
+			return existingPath, nil
 		}
 	}
 
@@ -321,6 +325,44 @@ func buildRuntimeDownloadURL(pathInRepo string) string {
 		parts[i] = url.PathEscape(parts[i])
 	}
 	return "https://huggingface.co/" + runtimeRepo + "/resolve/main/" + strings.Join(parts, "/")
+}
+
+func resolveRuntimeDestination(dstDir, fileName string, sizeBytes int64) (string, string, error) {
+	preferredName := platform.PreferredRuntimeFileName(runtimeGOOS(), fileName)
+	if preferredName == "" {
+		return "", "", fmt.Errorf("invalid artifact: empty file name")
+	}
+
+	preferredPath := filepath.Join(dstDir, preferredName)
+	for _, candidate := range platform.RuntimeFileCandidates(runtimeGOOS(), fileName) {
+		candidatePath := filepath.Join(dstDir, candidate)
+		st, err := os.Stat(candidatePath)
+		if err != nil {
+			continue
+		}
+		if !st.Mode().IsRegular() {
+			continue
+		}
+		if sizeBytes > 0 && st.Size() < sizeBytes {
+			continue
+		}
+		if candidatePath == preferredPath {
+			return preferredPath, preferredPath, nil
+		}
+		if err := os.Rename(candidatePath, preferredPath); err == nil {
+			return preferredPath, preferredPath, nil
+		}
+		return preferredPath, candidatePath, nil
+	}
+	return preferredPath, "", nil
+}
+
+func runtimeGOOS() string {
+	current := platform.Current()
+	if idx := strings.IndexByte(current, '/'); idx > 0 {
+		return current[:idx]
+	}
+	return current
 }
 
 func supportsVision(item models.QuantizedModel) bool {

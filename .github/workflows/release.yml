@@ -1,0 +1,144 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Run Go tests
+        run: go test ./...
+
+      - name: Run frontend tests
+        working-directory: webui
+        run: bun run test
+
+  smoke:
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            output: dist/translategemma-ui
+          - os: macos-latest
+            output: dist/translategemma-ui
+          - os: windows-latest
+            output: dist/translategemma-ui.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build native binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./tools/sync_webui_dist.sh
+          source ./tools/lib_release.sh
+          mkdir -p dist
+          go build -trimpath -ldflags "$(release_ldflags)" -o "${{ matrix.output }}" ./cmd/translategemma-ui
+
+      - name: Check --help
+        shell: bash
+        run: "./${{ matrix.output }} --help"
+
+      - name: Check --version
+        shell: bash
+        run: "./${{ matrix.output }} --version"
+
+  release:
+    needs: smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit updated Homebrew formula
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git switch -C main origin/main
+          version="${GITHUB_REF_NAME}"
+          checksum_file="dist/translategemma-ui_${version#v}_checksums.txt"
+          ./tools/render_homebrew_formula.sh "$version" "$checksum_file" Formula/translategemma-ui.rb
+          if git diff --quiet -- Formula/translategemma-ui.rb; then
+            echo "Formula is already up to date"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/translategemma-ui.rb
+          git commit -m "chore: update Homebrew formula for ${version}"
+          git push origin HEAD:main

@@ -7,6 +7,7 @@ import (
 
 	"translategemma-ui/internal/config"
 	"translategemma-ui/internal/models"
+	"translategemma-ui/internal/platform"
 )
 
 type CatalogItem struct {
@@ -31,6 +32,10 @@ func Catalog(dataRoot string, available []models.QuantizedModel, activeModelID, 
 }
 
 func LocalModelPath(dataRoot, fileName string) string {
+	return localModelPathForOS(dataRoot, fileName, runtimeGOOS())
+}
+
+func localModelPathForOS(dataRoot, fileName, goos string) string {
 	fileName = strings.TrimSpace(fileName)
 	if fileName == "" {
 		return ""
@@ -38,19 +43,28 @@ func LocalModelPath(dataRoot, fileName string) string {
 	if !strings.HasSuffix(strings.ToLower(fileName), ".llamafile") {
 		return ""
 	}
-	path := filepath.Join(dataRoot, "runtimes", fileName)
-	if fileExists(path) {
-		return path
+	for _, candidate := range platform.RuntimeFileCandidates(goos, fileName) {
+		path := filepath.Join(dataRoot, "runtimes", candidate)
+		if fileExists(path) {
+			return path
+		}
 	}
 	return ""
 }
 
 func DeleteModel(dataRoot string, item models.QuantizedModel, state *config.AppState) (string, bool, error) {
+	return deleteModelForOS(dataRoot, item, state, runtimeGOOS())
+}
+
+func deleteModelForOS(dataRoot string, item models.QuantizedModel, state *config.AppState, goos string) (string, bool, error) {
 	base := strings.TrimSpace(item.FileName)
 	if base == "" {
 		return "", false, nil
 	}
-	paths := []string{filepath.Join(dataRoot, "runtimes", base)}
+	paths := make([]string, 0, 2)
+	for _, candidate := range platform.RuntimeFileCandidates(goos, base) {
+		paths = append(paths, filepath.Join(dataRoot, "runtimes", candidate))
+	}
 
 	removedAny := false
 	removedPath := ""
@@ -100,4 +114,12 @@ func DeleteModel(dataRoot string, item models.QuantizedModel, state *config.AppS
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func runtimeGOOS() string {
+	current := platform.Current()
+	if idx := strings.IndexByte(current, '/'); idx > 0 {
+		return current[:idx]
+	}
+	return current
 }

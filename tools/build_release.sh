@@ -7,14 +7,21 @@ OUTPUT_NAME="${OUTPUT_NAME:-translategemma-ui}"
 
 cd "$ROOT_DIR"
 
+source "$ROOT_DIR/tools/lib_release.sh"
+
 "$ROOT_DIR/tools/sync_webui_dist.sh"
 
 mkdir -p "$OUTPUT_DIR"
 
+target_goos="${GOOS:-$(go env GOOS)}"
+if [[ "$target_goos" == "windows" && "$OUTPUT_NAME" != *.exe ]]; then
+  OUTPUT_NAME="${OUTPUT_NAME}.exe"
+fi
+
 CGO_ENABLED="${CGO_ENABLED:-0}" \
 go build \
   -trimpath \
-  -ldflags="-s -w" \
+  -ldflags="$(release_ldflags)" \
   -o "$OUTPUT_DIR/$OUTPUT_NAME" \
   ./cmd/translategemma-ui
 
