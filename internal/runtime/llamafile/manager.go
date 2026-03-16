@@ -40,6 +40,8 @@ type Manager struct {
 	cfgMu sync.RWMutex
 	cmd   *exec.Cmd
 
+	ownedPID int
+
 	preferredModelPath string
 }
 
@@ -96,10 +98,59 @@ func (m *Manager) Stop() error {
 		}
 	}
 
-	killErr := proc.Kill()
+	killErr := killManagedProcess(proc)
 	if killErr != nil && !errors.Is(killErr, os.ErrProcessDone) {
 		return killErr
 	}
+	m.clearOwnedPID()
+	_ = os.Remove(m.PidFile)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		backendURL := m.CurrentBackendURL()
+		if !runtime.ProbeBackend(backendURL).Ready {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return nil
+}
+
+// StopOwned terminates the runtime only if it was started by this manager instance.
+func (m *Manager) StopOwned() error {
+	m.mu.Lock()
+	ownedPID := m.ownedPID
+	var proc *os.Process
+	if ownedPID <= 0 {
+		m.mu.Unlock()
+		return nil
+	}
+	if m.cmd != nil && m.cmd.Process != nil && m.cmd.Process.Pid == ownedPID {
+		proc = m.cmd.Process
+		m.cmd = nil
+	}
+	m.mu.Unlock()
+
+	if proc == nil {
+		pid, err := m.readManagedPID()
+		if err != nil || pid <= 0 || pid != ownedPID {
+			m.clearOwnedPID()
+			return nil
+		}
+		foundProc, err := os.FindProcess(pid)
+		if err != nil {
+			m.clearOwnedPID()
+			_ = os.Remove(m.PidFile)
+			return nil
+		}
+		proc = foundProc
+	}
+
+	killErr := killManagedProcess(proc)
+	if killErr != nil && !errors.Is(killErr, os.ErrProcessDone) {
+		return killErr
+	}
+	m.clearOwnedPID()
 	_ = os.Remove(m.PidFile)
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -174,6 +225,7 @@ func (m *Manager) EnsureRunningWithProgress(onProgress func(Progress)) (runtime.
 		_ = os.Chmod(launch.Path, 0o755)
 	}
 	cmd := exec.Command(launch.Path, launch.Args...)
+	prepareLaunchCommand(cmd)
 	cmd.Stdout = logf
 	cmd.Stderr = logf
 	if err := cmd.Start(); err != nil {
@@ -181,6 +233,7 @@ func (m *Manager) EnsureRunningWithProgress(onProgress func(Progress)) (runtime.
 		return runtime.Status{Ready: false, Message: "failed to launch runtime"}, fmt.Errorf("%s: %w", launch.Name, err)
 	}
 	m.cmd = cmd
+	m.ownedPID = cmd.Process.Pid
 	_ = os.WriteFile(m.PidFile, []byte(fmt.Sprintf("%d\n", cmd.Process.Pid)), 0o644)
 
 	go func(localCmd *exec.Cmd, localLog *os.File) {
@@ -190,6 +243,9 @@ func (m *Manager) EnsureRunningWithProgress(onProgress func(Progress)) (runtime.
 		defer m.mu.Unlock()
 		if m.cmd == localCmd {
 			m.cmd = nil
+		}
+		if m.ownedPID == localCmd.Process.Pid {
+			m.ownedPID = 0
 		}
 		pid, err := m.readManagedPID()
 		if err == nil && pid == localCmd.Process.Pid {
@@ -313,6 +369,12 @@ func reportProgress(cb func(Progress), p Progress) {
 		return
 	}
 	cb(p)
+}
+
+func (m *Manager) clearOwnedPID() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ownedPID = 0
 }
 
 func (m *Manager) preferredPath() string {

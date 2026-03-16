@@ -3,6 +3,8 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -22,11 +24,12 @@ import (
 )
 
 type fakeRuntimeManager struct {
-	backendURL  string
-	modelPath   string
-	stopCalls   int
-	ensureCalls int
-	ready       bool
+	backendURL     string
+	modelPath      string
+	stopCalls      int
+	stopOwnedCalls int
+	ensureCalls    int
+	ready          bool
 }
 
 type fakeTranslator struct {
@@ -72,6 +75,12 @@ func (f *fakeRuntimeManager) CurrentBackendURL() string {
 
 func (f *fakeRuntimeManager) Stop() error {
 	f.stopCalls++
+	f.ready = false
+	return nil
+}
+
+func (f *fakeRuntimeManager) StopOwned() error {
+	f.stopOwnedCalls++
 	f.ready = false
 	return nil
 }
@@ -628,6 +637,57 @@ func TestStopRuntimeWithEventsStopsCurrentRuntime(t *testing.T) {
 	}
 	if manager.stopCalls != 1 {
 		t.Fatalf("expected runtime stop to be called once, got %d", manager.stopCalls)
+	}
+}
+
+func TestRunHTTPServerStopsOwnedRuntimeOnShutdown(t *testing.T) {
+	manager := &fakeRuntimeManager{backendURL: "http://127.0.0.1:8080", ready: true}
+	server := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- runHTTPServer(ctx, server, manager, func() error {
+			return server.Serve(listener)
+		})
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	if err := <-done; err != nil {
+		t.Fatalf("runHTTPServer returned error: %v", err)
+	}
+	if manager.stopOwnedCalls != 1 {
+		t.Fatalf("expected owned runtime stop to be called once, got %d", manager.stopOwnedCalls)
+	}
+	if manager.stopCalls != 0 {
+		t.Fatalf("expected shared stop path to remain unused, got %d calls", manager.stopCalls)
+	}
+}
+
+func TestRunHTTPServerReturnsServeErrorAndStillCleansUpOwnedRuntime(t *testing.T) {
+	manager := &fakeRuntimeManager{backendURL: "http://127.0.0.1:8080", ready: true}
+	server := &http.Server{}
+	serveErr := errors.New("bind failed")
+
+	err := runHTTPServer(context.Background(), server, manager, func() error {
+		return serveErr
+	})
+	if !errors.Is(err, serveErr) {
+		t.Fatalf("expected serve error %v, got %v", serveErr, err)
+	}
+	if manager.stopOwnedCalls != 1 {
+		t.Fatalf("expected cleanup to stop owned runtime once, got %d", manager.stopOwnedCalls)
 	}
 }
 

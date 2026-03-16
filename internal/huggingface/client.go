@@ -19,16 +19,12 @@ import (
 )
 
 const (
-	runtimeRepo           = "xzhih/translategemma-4b-it-llamafile"
-	runtimeManifestURL    = "https://huggingface.co/" + runtimeRepo + "/resolve/main/manifest-v1.json"
-	localManifestEnv      = "TRANSLATEGEMMA_UI_MANIFEST_PATH"
-	hfTokenEnv            = "HF_TOKEN"
-	hfHubTokenEnv         = "HUGGINGFACE_HUB_TOKEN"
-	cacheTTL              = 5 * time.Minute
-	listTimeout           = 20 * time.Second
-	downloadTimeout       = 90 * time.Minute
-	runtimeSubdir         = "runtimes"
-	publisherManifestHint = "translategemma-runtime-publisher/dist/translategemma-4b-it/manifest-v1.json"
+	runtimeRepo        = "xzhih/translategemma-4b-it-llamafile"
+	runtimeManifestURL = "https://huggingface.co/" + runtimeRepo + "/resolve/main/manifest-v1.json"
+	cacheTTL           = 5 * time.Minute
+	listTimeout        = 20 * time.Second
+	downloadTimeout    = 90 * time.Minute
+	runtimeSubdir      = "runtimes"
 )
 
 type manifest struct {
@@ -65,6 +61,27 @@ var (
 	cacheAt         time.Time
 )
 
+// SeedCatalogForTests replaces the catalog cache for unit tests and returns a restore function.
+func SeedCatalogForTests(items []models.QuantizedModel) func() {
+	cacheMu.Lock()
+	prevItems := append([]models.QuantizedModel(nil), cachedArtifacts...)
+	prevAt := cacheAt
+	cachedArtifacts = append([]models.QuantizedModel(nil), items...)
+	if len(items) > 0 {
+		cacheAt = time.Now()
+	} else {
+		cacheAt = time.Time{}
+	}
+	cacheMu.Unlock()
+
+	return func() {
+		cacheMu.Lock()
+		cachedArtifacts = prevItems
+		cacheAt = prevAt
+		cacheMu.Unlock()
+	}
+}
+
 // ListTranslateGemmaModels returns the supported packaged runtimes.
 func ListTranslateGemmaModels() []models.QuantizedModel {
 	return listArtifacts()
@@ -80,12 +97,12 @@ func RecommendedVisionRuntime() (models.QuantizedModel, bool) {
 	return models.QuantizedModel{}, false
 }
 
-// DownloadModel downloads or copies a runtime artifact into the local app data root.
+// DownloadModel downloads a runtime artifact into the local app data root.
 func DownloadModel(dataRoot string, item models.QuantizedModel, onProgress func(DownloadProgress)) (string, error) {
 	return DownloadModelWithContext(context.Background(), dataRoot, item, onProgress)
 }
 
-// DownloadModelWithContext downloads or copies a runtime artifact into the local app data root.
+// DownloadModelWithContext downloads a runtime artifact into the local app data root.
 func DownloadModelWithContext(ctx context.Context, dataRoot string, item models.QuantizedModel, onProgress func(DownloadProgress)) (string, error) {
 	if item.FileName == "" {
 		return "", fmt.Errorf("invalid artifact: empty file name")
@@ -114,15 +131,10 @@ func DownloadModelWithContext(ctx context.Context, dataRoot string, item models.
 	ctx, cancel := withDownloadTimeout(ctx)
 	defer cancel()
 
-	if srcPath, ok := localFileSource(downloadURL); ok {
-		return copyLocalArtifact(ctx, srcPath, dstPath, item.SizeBytes, onProgress)
-	}
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	if err != nil {
 		return "", err
 	}
-	applyAuth(req)
 	resp, err := (&http.Client{Timeout: 0}).Do(req)
 	if err != nil {
 		return "", fmt.Errorf("download request failed: %w", err)
@@ -170,10 +182,6 @@ func listArtifacts() []models.QuantizedModel {
 }
 
 func fetchArtifacts() ([]models.QuantizedModel, error) {
-	if manifestPath := resolveLocalManifest(); manifestPath != "" {
-		return parseManifestFile(manifestPath)
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), listTimeout)
 	defer cancel()
 
@@ -181,7 +189,6 @@ func fetchArtifacts() ([]models.QuantizedModel, error) {
 	if err != nil {
 		return nil, err
 	}
-	applyAuth(req)
 	resp, err := (&http.Client{Timeout: listTimeout}).Do(req)
 	if err != nil {
 		return nil, err
@@ -196,22 +203,10 @@ func fetchArtifacts() ([]models.QuantizedModel, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
 		return nil, err
 	}
-	return manifestToCatalog(doc, "")
+	return manifestToCatalog(doc)
 }
 
-func parseManifestFile(path string) ([]models.QuantizedModel, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var doc manifest
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		return nil, err
-	}
-	return manifestToCatalog(doc, filepath.Dir(path))
-}
-
-func manifestToCatalog(doc manifest, localBase string) ([]models.QuantizedModel, error) {
+func manifestToCatalog(doc manifest) ([]models.QuantizedModel, error) {
 	if len(doc.Models) == 0 {
 		return nil, fmt.Errorf("runtime manifest does not contain models")
 	}
@@ -224,18 +219,13 @@ func manifestToCatalog(doc manifest, localBase string) ([]models.QuantizedModel,
 			continue
 		}
 
-		downloadURL := buildRuntimeDownloadURL(pathInRepo)
-		if localBase != "" {
-			downloadURL = "file://" + filepath.Join(localBase, filepath.FromSlash(pathInRepo))
-		}
-
 		out = append(out, models.QuantizedModel{
 			ID:          strings.TrimSpace(entry.ID),
 			Kind:        "model",
 			FileName:    fileName,
 			Size:        humanSize(entry.Runtime.Llamafile.SizeBytes),
 			SizeBytes:   entry.Runtime.Llamafile.SizeBytes,
-			DownloadURL: downloadURL,
+			DownloadURL: buildRuntimeDownloadURL(pathInRepo),
 			Recommended: entry.Recommended,
 		})
 	}
@@ -286,38 +276,6 @@ func builtinCatalog() []models.QuantizedModel {
 		items[i].Size = humanSize(items[i].SizeBytes)
 	}
 	return items
-}
-
-func resolveLocalManifest() string {
-	if envPath := strings.TrimSpace(os.Getenv(localManifestEnv)); envPath != "" && fileExists(envPath) {
-		return envPath
-	}
-
-	candidates := []string{}
-	if cwd, err := os.Getwd(); err == nil {
-		candidates = append(candidates, filepath.Join(cwd, "..", publisherManifestHint))
-		candidates = append(candidates, filepath.Join(cwd, publisherManifestHint))
-	}
-	if exe, err := os.Executable(); err == nil {
-		exeDir := filepath.Dir(exe)
-		candidates = append(candidates, filepath.Join(exeDir, "..", publisherManifestHint))
-		candidates = append(candidates, filepath.Join(exeDir, "..", "..", publisherManifestHint))
-	}
-	seen := map[string]struct{}{}
-	for _, candidate := range candidates {
-		if candidate == "" {
-			continue
-		}
-		candidate = filepath.Clean(candidate)
-		if _, ok := seen[candidate]; ok {
-			continue
-		}
-		seen[candidate] = struct{}{}
-		if fileExists(candidate) {
-			return candidate
-		}
-	}
-	return ""
 }
 
 func buildRuntimeDownloadURL(pathInRepo string) string {
@@ -384,33 +342,6 @@ func catalogRank(item models.QuantizedModel) string {
 	default:
 		return "9:" + item.ID
 	}
-}
-
-func localFileSource(downloadURL string) (string, bool) {
-	if strings.HasPrefix(downloadURL, "file://") {
-		return strings.TrimPrefix(downloadURL, "file://"), true
-	}
-	if filepath.IsAbs(downloadURL) && fileExists(downloadURL) {
-		return downloadURL, true
-	}
-	return "", false
-}
-
-func copyLocalArtifact(ctx context.Context, srcPath, dstPath string, sizeBytes int64, onProgress func(DownloadProgress)) (string, error) {
-	if !fileExists(srcPath) {
-		return "", fmt.Errorf("local runtime artifact not found: %s", srcPath)
-	}
-	in, err := os.Open(srcPath)
-	if err != nil {
-		return "", err
-	}
-	defer in.Close()
-
-	if st, err := in.Stat(); err == nil && sizeBytes <= 0 {
-		sizeBytes = st.Size()
-	}
-	reportDownload(onProgress, 0, sizeBytes, 0, "Copying local runtime artifact")
-	return writeDownloadedArtifact(ctx, in, dstPath, sizeBytes, sizeBytes, onProgress)
 }
 
 func writeDownloadedArtifact(ctx context.Context, src io.Reader, dstPath string, contentLength, sizeBytes int64, onProgress func(DownloadProgress)) (string, error) {
@@ -496,19 +427,6 @@ func withDownloadTimeout(ctx context.Context) (context.Context, context.CancelFu
 		return ctx, func() {}
 	}
 	return context.WithTimeout(ctx, downloadTimeout)
-}
-
-func applyAuth(req *http.Request) {
-	if req == nil {
-		return
-	}
-	if token := strings.TrimSpace(os.Getenv(hfTokenEnv)); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-		return
-	}
-	if token := strings.TrimSpace(os.Getenv(hfHubTokenEnv)); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
 }
 
 func reportDownload(cb func(DownloadProgress), downloaded, total int64, speedBytesPerSec float64, msg string) {

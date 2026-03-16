@@ -1,11 +1,14 @@
 package tui
 
 import (
-	"fmt"
+	"errors"
 	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/progress"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -39,31 +42,37 @@ const (
 )
 
 type model struct {
-	screen        screen
-	models        []models.QuantizedModel
-	cursor        int
-	selected      *models.QuantizedModel
-	selectedName  string
-	sourceLang    string
-	targetLang    string
-	sourceOptions []languages.Option
-	targetOptions []languages.Option
-	status        string
-	output        string
-	input         textarea.Model
-	instruction   textarea.Model
-	outputView    viewport.Model
-	help          help.Model
-	keys          keyMap
-	service       *translate.Service
-	runtime       *lf.Manager
-	backendURL    string
-	dataRoot      string
-	streaming     bool
+	screen         screen
+	models         []models.QuantizedModel
+	catalog        []modelstore.CatalogItem
+	cursor         int
+	selected       *models.QuantizedModel
+	selectedName   string
+	sourceLang     string
+	targetLang     string
+	sourceOptions  []languages.Option
+	targetOptions  []languages.Option
+	status         string
+	output         string
+	input          textarea.Model
+	instruction    textarea.Model
+	outputView     viewport.Model
+	modelList      list.Model
+	activity       spinner.Model
+	downloadBar    progress.Model
+	loadBar        progress.Model
+	help           help.Model
+	keys           keyMap
+	service        *translate.Service
+	runtime        *lf.Manager
+	backendURL     string
+	dataRoot       string
+	streaming      bool
+	runtimeReady   bool
+	pendingRequest *translate.Request
 
-	windowWidth        int
-	windowHeight       int
-	startupRuntimePath string
+	windowWidth  int
+	windowHeight int
 
 	cfg   config.AppConfig
 	state config.AppState
@@ -97,8 +106,9 @@ type provisionProgressMsg struct {
 }
 
 type provisionDoneMsg struct {
-	ModelPath string
-	Message   string
+	ModelPath  string
+	BackendURL string
+	Message    string
 }
 
 type provisionErrMsg struct {
@@ -108,11 +118,19 @@ type provisionErrMsg struct {
 // Run starts the Bubble Tea app.
 func Run(preselectedModelID, dataRoot string) error {
 	m := newModel(preselectedModelID, dataRoot)
-	defer func() {
-		_ = m.runtime.Stop()
-	}()
-	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
-	return err
+	finalModel, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
+	runtimeManager := m.runtime
+	if typedModel, ok := finalModel.(model); ok && typedModel.runtime != nil {
+		runtimeManager = typedModel.runtime
+	}
+	stopErr := runtimeManager.StopOwned()
+	if err != nil && stopErr != nil {
+		return errors.Join(err, stopErr)
+	}
+	if err != nil {
+		return err
+	}
+	return stopErr
 }
 
 func newModel(preselectedModelID, dataRoot string) model {
@@ -137,17 +155,33 @@ func newModel(preselectedModelID, dataRoot string) model {
 	helpModel.ShowAll = false
 	helpModel.ShortSeparator = " | "
 
+	runtimeList := newRuntimeCatalogList()
+	activity := spinner.New(spinner.WithSpinner(spinner.Line))
+	activity.Style = lipgloss.NewStyle().Foreground(colorAccent)
+
 	m := model{
-		screen:          modelScreen,
-		models:          all,
-		sourceLang:      "en",
-		targetLang:      "zh-CN",
-		sourceOptions:   languages.WithoutAuto(),
-		targetOptions:   languages.WithoutAuto(),
-		status:          "Scanning downloaded runtimes...",
-		input:           in,
-		instruction:     instruction,
-		outputView:      viewport.New(80, 10),
+		screen:        modelScreen,
+		models:        all,
+		sourceLang:    "en",
+		targetLang:    "zh-CN",
+		sourceOptions: languages.WithoutAuto(),
+		targetOptions: languages.WithoutAuto(),
+		status:        "Scanning downloaded runtimes...",
+		input:         in,
+		instruction:   instruction,
+		outputView:    viewport.New(80, 10),
+		modelList:     runtimeList,
+		activity:      activity,
+		downloadBar: progress.New(
+			progress.WithSolidFill(string(colorAccent)),
+			progress.WithFillCharacters('=', '-'),
+			progress.WithoutPercentage(),
+		),
+		loadBar: progress.New(
+			progress.WithSolidFill(string(colorSuccess)),
+			progress.WithFillCharacters('=', '-'),
+			progress.WithoutPercentage(),
+		),
 		help:            helpModel,
 		keys:            defaultKeyMap(),
 		service:         translate.NewService(backendURL),
@@ -174,25 +208,25 @@ func newModel(preselectedModelID, dataRoot string) model {
 	}
 
 	if m.bootstrapInstalledRuntime(activeID) {
+		m.syncCatalogList()
 		m.syncOutputViewport()
 		return m
 	}
 
 	if probe := runtime.ProbeBackend(backendURL); probe.Ready {
+		m.runtimeReady = true
 		m.status = probe.Message
 	} else {
+		m.runtimeReady = false
 		m.status = "No local runtime detected. Choose a model to install."
 	}
+	m.syncCatalogList()
 	m.syncOutputViewport()
 	return m
 }
 
 func (m model) Init() tea.Cmd {
-	cmds := []tea.Cmd{textarea.Blink}
-	if m.startupRuntimePath != "" {
-		cmds = append(cmds, startActivateRuntimeCmd(m.dataRoot, m.runtime, m.state, m.startupRuntimePath))
-	}
-	return tea.Batch(cmds...)
+	return textarea.Blink
 }
 
 func newTextarea(placeholder string, charLimit, height int) textarea.Model {
@@ -255,18 +289,17 @@ func (m *model) prepareStartupRuntime(modelPath string) bool {
 	if strings.TrimSpace(modelPath) == "" {
 		return false
 	}
+	m.screen = translateScreen
 	if probe := runtime.ProbeBackend(m.backendURL); probe.Ready {
-		m.screen = translateScreen
+		m.runtimeReady = true
 		m.status = probe.Message
 		return true
 	}
-
-	m.screen = provisionScreen
-	m.provisionStage = "load"
+	m.runtimeReady = false
+	m.provisionStage = ""
 	m.downloadPercent = -1
-	m.loadPercent = 0
-	m.status = fmt.Sprintf("Starting runtime: %s", m.currentRuntimeName())
-	m.startupRuntimePath = modelPath
+	m.loadPercent = -1
+	m.status = "Runtime idle. The selected model will load on first translation."
 	return true
 }
 
@@ -280,6 +313,55 @@ func (m *model) applyRuntimePath(path string) string {
 	m.runtime.SetPreferredModelPath(path)
 	_ = config.SaveAppState(m.dataRoot, m.state)
 	return path
+}
+
+func (m *model) syncBackendURL(next string, persist bool) {
+	next = runtime.NormalizeBackendURL(next)
+	if next == "" {
+		next = runtime.NormalizeBackendURL(runtime.DefaultBackendURL)
+	}
+	m.backendURL = next
+	m.state.BackendURL = next
+	m.runtime.SetBackendURL(next)
+	if m.service != nil {
+		m.service.SetBackendURL(next)
+	}
+	if persist {
+		_ = config.SaveAppState(m.dataRoot, m.state)
+	}
+}
+
+func (m *model) resolveActiveRuntimePath() string {
+	catalog := modelstore.Catalog(m.dataRoot, m.models, strings.TrimSpace(m.cfg.ActiveModelID), strings.TrimSpace(m.state.ActiveModelPath))
+
+	if idx, item, ok := matchCatalogByPath(catalog, m.state.ActiveModelPath); ok {
+		m.cursor = idx
+		return m.setKnownSelection(item, item.Path)
+	}
+	if m.selected != nil {
+		if idx, item, ok := matchCatalogByID(catalog, m.selected.ID); ok {
+			m.cursor = idx
+			return m.setKnownSelection(item, item.Path)
+		}
+	}
+	if idx, item, ok := matchCatalogByID(catalog, m.cfg.ActiveModelID); ok {
+		m.cursor = idx
+		return m.setKnownSelection(item, item.Path)
+	}
+	if m.cursor >= 0 && m.cursor < len(catalog) {
+		item := catalog[m.cursor]
+		if item.Installed {
+			return m.setKnownSelection(item, item.Path)
+		}
+	}
+	for idx, item := range catalog {
+		if !item.Installed {
+			continue
+		}
+		m.cursor = idx
+		return m.setKnownSelection(item, item.Path)
+	}
+	return ""
 }
 
 func matchCatalogByPath(items []modelstore.CatalogItem, targetPath string) (int, modelstore.CatalogItem, bool) {

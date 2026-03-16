@@ -34,6 +34,7 @@ type taskStartedMsg struct {
 
 type taskClosedMsg struct {
 	kind taskKind
+	task *taskState
 }
 
 func (t *taskState) stop() {
@@ -74,7 +75,7 @@ func waitForTaskCmd(kind taskKind, task *taskState) tea.Cmd {
 	return func() tea.Msg {
 		msg, ok := <-task.msgs
 		if !ok {
-			return taskClosedMsg{kind: kind}
+			return taskClosedMsg{kind: kind, task: task}
 		}
 		return msg
 	}
@@ -106,9 +107,7 @@ func startStreamCmd(req translate.Request, svc *translate.Service) tea.Cmd {
 }
 
 func startInstallModelCmd(dataRoot string, selected models.QuantizedModel, runtimeManager *lf.Manager, state config.AppState) tea.Cmd {
-	return startTaskCmd(provisionTaskKind, func() {
-		_ = runtimeManager.Stop()
-	}, func(ctx context.Context, out chan<- tea.Msg) {
+	return startTaskCmd(provisionTaskKind, nil, func(ctx context.Context, out chan<- tea.Msg) {
 		_ = sendTaskMsg(ctx, out, provisionProgressMsg{Stage: "download", Percent: 0, Message: "Downloading model"})
 		modelPath, err := huggingface.DownloadModelWithContext(ctx, dataRoot, selected, func(p huggingface.DownloadProgress) {
 			_ = sendTaskMsg(ctx, out, provisionProgressMsg{
@@ -124,25 +123,32 @@ func startInstallModelCmd(dataRoot string, selected models.QuantizedModel, runti
 			_ = sendTaskMsg(ctx, out, provisionErrMsg{Message: err.Error()})
 			return
 		}
+		if ctx.Err() != nil {
+			return
+		}
 		runActivateRuntimeTask(ctx, out, dataRoot, runtimeManager, state, modelPath)
 	})
 }
 
 func startActivateRuntimeCmd(dataRoot string, runtimeManager *lf.Manager, state config.AppState, modelPath string) tea.Cmd {
-	return startTaskCmd(provisionTaskKind, func() {
-		_ = runtimeManager.Stop()
-	}, func(ctx context.Context, out chan<- tea.Msg) {
+	return startTaskCmd(provisionTaskKind, nil, func(ctx context.Context, out chan<- tea.Msg) {
 		runActivateRuntimeTask(ctx, out, dataRoot, runtimeManager, state, modelPath)
 	})
 }
 
 func runActivateRuntimeTask(ctx context.Context, out chan<- tea.Msg, dataRoot string, runtimeManager *lf.Manager, state config.AppState, modelPath string) {
+	if ctx.Err() != nil {
+		return
+	}
 	_ = sendTaskMsg(ctx, out, provisionProgressMsg{Stage: "load", Percent: 0, Message: "Preparing active runtime"})
 	runtimeManager.SetPreferredModelPath(modelPath)
 	state.ActiveModelPath = modelPath
 	state.RuntimeMode = runtimeModeForPath(modelPath)
 	_ = config.SaveAppState(dataRoot, state)
 
+	if ctx.Err() != nil {
+		return
+	}
 	_ = sendTaskMsg(ctx, out, provisionProgressMsg{Stage: "load", Percent: 0, Message: "Loading model into runtime"})
 	_ = runtimeManager.Stop()
 	status, err := runtimeManager.EnsureRunningWithProgress(func(p lf.Progress) {
@@ -163,5 +169,9 @@ func runActivateRuntimeTask(ctx context.Context, out chan<- tea.Msg, dataRoot st
 	state.BackendURL = runtimeManager.CurrentBackendURL()
 	_ = config.SaveAppState(dataRoot, state)
 	_ = sendTaskMsg(ctx, out, provisionProgressMsg{Stage: "load", Percent: 100, Message: status.Message})
-	_ = sendTaskMsg(ctx, out, provisionDoneMsg{ModelPath: strings.TrimSpace(modelPath), Message: status.Message})
+	_ = sendTaskMsg(ctx, out, provisionDoneMsg{
+		ModelPath:  strings.TrimSpace(modelPath),
+		BackendURL: runtimeManager.CurrentBackendURL(),
+		Message:    status.Message,
+	})
 }

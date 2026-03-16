@@ -1,10 +1,14 @@
 package web
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"translategemma-ui/internal/config"
@@ -156,5 +160,56 @@ func Run(listen, modelID, dataRoot string) error {
 		return err
 	}
 	fmt.Printf("Web UI listening on http://%s\n", listen)
-	return http.ListenAndServe(listen, s.routes())
+	server := &http.Server{
+		Addr:    listen,
+		Handler: s.routes(),
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return runHTTPServer(ctx, server, s.runtimeManager, server.ListenAndServe)
+}
+
+type ownedRuntimeStopper interface {
+	StopOwned() error
+}
+
+func runHTTPServer(ctx context.Context, server *http.Server, runtimeManager runtimeController, serve func() error) error {
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- serve()
+	}()
+
+	var runErr error
+	select {
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			runErr = err
+		}
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			runErr = err
+		}
+		if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			runErr = errors.Join(runErr, err)
+		}
+	}
+
+	stopErr := stopOwnedRuntime(runtimeManager)
+	if runErr != nil && stopErr != nil {
+		return errors.Join(runErr, stopErr)
+	}
+	if runErr != nil {
+		return runErr
+	}
+	return stopErr
+}
+
+func stopOwnedRuntime(runtimeManager runtimeController) error {
+	stopper, ok := runtimeManager.(ownedRuntimeStopper)
+	if !ok || stopper == nil {
+		return nil
+	}
+	return stopper.StopOwned()
 }

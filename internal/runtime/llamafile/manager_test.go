@@ -1,11 +1,15 @@
 package llamafile
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 func TestBuildLaunchCommandLlamafileUsesServerArgs(t *testing.T) {
@@ -69,4 +73,117 @@ func TestBuildLaunchCommandRejectsNonLlamafile(t *testing.T) {
 	if _, err := m.buildLaunchCommand("/tmp/model.gguf", "127.0.0.1", "8080"); err == nil {
 		t.Fatalf("expected non-llamafile runtime to be rejected")
 	}
+}
+
+func TestStopOwnedKillsSessionProcess(t *testing.T) {
+	dataRoot := t.TempDir()
+	m := NewManager(dataRoot, "http://127.0.0.1:1")
+
+	cmd := exec.Command("sh", "-c", "sleep 30")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start child process: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+
+	m.cmd = cmd
+	m.ownedPID = cmd.Process.Pid
+	if err := os.WriteFile(m.PidFile, []byte(fmt.Sprintf("%d\n", cmd.Process.Pid)), 0o644); err != nil {
+		t.Fatalf("write pid file: %v", err)
+	}
+
+	if err := m.StopOwned(); err != nil {
+		t.Fatalf("stop owned process: %v", err)
+	}
+
+	if m.ownedPID != 0 {
+		t.Fatalf("expected owned pid to be cleared, got %d", m.ownedPID)
+	}
+	if _, err := os.Stat(m.PidFile); !os.IsNotExist(err) {
+		t.Fatalf("expected pid file to be removed, got err=%v", err)
+	}
+}
+
+func TestStopOwnedLeavesSharedRuntimeUntouched(t *testing.T) {
+	dataRoot := t.TempDir()
+	m := NewManager(dataRoot, "http://127.0.0.1:1")
+	if err := os.WriteFile(m.PidFile, []byte("4242\n"), 0o644); err != nil {
+		t.Fatalf("write pid file: %v", err)
+	}
+
+	if err := m.StopOwned(); err != nil {
+		t.Fatalf("stop owned on shared pid file: %v", err)
+	}
+
+	if _, err := os.Stat(m.PidFile); err != nil {
+		t.Fatalf("expected shared pid file to remain untouched, got err=%v", err)
+	}
+}
+
+func TestStopOwnedKillsChildProcessGroup(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("process group signaling is unix-specific")
+	}
+
+	dataRoot := t.TempDir()
+	m := NewManager(dataRoot, "http://127.0.0.1:1")
+	childPIDFile := filepath.Join(dataRoot, "child.pid")
+	script := fmt.Sprintf("sleep 30 & child=$!; echo $child > %s; wait $child", childPIDFile)
+
+	cmd := exec.Command("sh", "-c", script)
+	prepareLaunchCommand(cmd)
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start shell wrapper: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(childPIDFile); err == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	rawChildPID, err := os.ReadFile(childPIDFile)
+	if err != nil {
+		t.Fatalf("read child pid file: %v", err)
+	}
+
+	var childPID int
+	if _, err := fmt.Sscanf(strings.TrimSpace(string(rawChildPID)), "%d", &childPID); err != nil {
+		t.Fatalf("parse child pid: %v", err)
+	}
+
+	m.cmd = cmd
+	m.ownedPID = cmd.Process.Pid
+	if err := os.WriteFile(m.PidFile, []byte(fmt.Sprintf("%d\n", cmd.Process.Pid)), 0o644); err != nil {
+		t.Fatalf("write pid file: %v", err)
+	}
+
+	if err := m.StopOwned(); err != nil {
+		t.Fatalf("stop owned process tree: %v", err)
+	}
+
+	deadline = time.Now().Add(2 * time.Second)
+	if waitForUnixProcessExit(childPID, time.Until(deadline)) {
+		return
+	}
+	t.Fatalf("expected child process %d to be terminated with its process group", childPID)
+}
+
+func waitForUnixProcessExit(pid int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if err := syscall.Kill(pid, 0); err != nil {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return false
 }

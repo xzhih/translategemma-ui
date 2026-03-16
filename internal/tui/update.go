@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/progress"
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"translategemma-ui/internal/config"
@@ -20,6 +22,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.windowHeight = msg.Height
 		m.applyLayout()
 		return m, nil
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.activity, cmd = m.activity.Update(msg)
+		if m.shouldAnimateActivity() {
+			return m, cmd
+		}
+		return m, nil
+	case progress.FrameMsg:
+		var cmds []tea.Cmd
+		nextDownload, downloadCmd := m.downloadBar.Update(msg)
+		m.downloadBar = nextDownload.(progress.Model)
+		if downloadCmd != nil {
+			cmds = append(cmds, downloadCmd)
+		}
+		nextLoad, loadCmd := m.loadBar.Update(msg)
+		m.loadBar = nextLoad.(progress.Model)
+		if loadCmd != nil {
+			cmds = append(cmds, loadCmd)
+		}
+		return m, tea.Batch(cmds...)
 	case taskStartedMsg:
 		return m.handleTaskStarted(msg)
 	case taskClosedMsg:
@@ -32,49 +54,78 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Final != "" {
 			m.output = msg.Final
 		}
+		m.runtimeReady = true
 		m.streaming = false
-		m.cancelTask(streamTaskKind)
+		m.releaseTask(streamTaskKind)
+		_ = m.syncCatalogList()
 		m.status = "Translation completed"
 		m.syncOutputViewport()
 		return m, nil
 	case streamErrMsg:
+		m.runtimeReady = runtime.ProbeBackend(m.backendURL).Ready
 		m.streaming = false
-		m.cancelTask(streamTaskKind)
+		m.releaseTask(streamTaskKind)
+		_ = m.syncCatalogList()
 		m.status = msg.Message
 		return m, nil
 	case provisionProgressMsg:
+		cmds := []tea.Cmd{waitForTaskCmd(provisionTaskKind, m.workTask)}
 		m.provisionStage = msg.Stage
 		if msg.Stage == "download" {
 			m.downloadPercent = msg.Percent
+			if msg.Percent >= 0 {
+				cmds = append(cmds, m.downloadBar.SetPercent(msg.Percent/100))
+			}
 		}
 		if msg.Stage == "load" {
 			m.loadPercent = msg.Percent
+			if msg.Percent >= 0 {
+				cmds = append(cmds, m.loadBar.SetPercent(msg.Percent/100))
+			}
 		}
 		if msg.Message != "" {
 			m.status = msg.Message
 		}
-		return m, waitForTaskCmd(provisionTaskKind, m.workTask)
+		return m, tea.Batch(cmds...)
 	case provisionDoneMsg:
+		m.syncBackendURL(msg.BackendURL, false)
+		m.runtimeReady = true
 		m.screen = translateScreen
 		m.provisionStage = ""
 		m.downloadPercent = 100
 		m.loadPercent = 100
 		m.status = msg.Message
-		m.startupRuntimePath = ""
-		m.cancelTask(provisionTaskKind)
+		m.releaseTask(provisionTaskKind)
 		m.focus = textFocus
 		if msg.ModelPath != "" {
 			m.state.ActiveModelPath = msg.ModelPath
 			_ = config.SaveAppState(m.dataRoot, m.state)
 		}
-		return m, m.setFocus(textFocus)
+		_ = m.syncCatalogList()
+		focusCmd := m.setFocus(textFocus)
+		if m.pendingRequest == nil {
+			return m, focusCmd
+		}
+		req := *m.pendingRequest
+		m.pendingRequest = nil
+		m.output = ""
+		m.syncOutputViewport()
+		m.status = "Streaming translation..."
+		m.streaming = true
+		return m, tea.Batch(focusCmd, startStreamCmd(req, m.service), m.activity.Tick)
 	case provisionErrMsg:
-		m.screen = modelScreen
+		m.runtimeReady = runtime.ProbeBackend(m.backendURL).Ready
+		if m.pendingRequest != nil {
+			m.screen = translateScreen
+		} else {
+			m.screen = modelScreen
+		}
 		m.provisionStage = ""
 		m.downloadPercent = -1
 		m.loadPercent = -1
-		m.startupRuntimePath = ""
+		m.pendingRequest = nil
 		m.cancelTask(provisionTaskKind)
+		_ = m.syncCatalogList()
 		m.status = msg.Message
 		return m, nil
 	case tea.KeyMsg:
@@ -104,16 +155,24 @@ func (m model) handleTaskStarted(msg taskStartedMsg) (tea.Model, tea.Cmd) {
 		m.cancelTask(provisionTaskKind)
 		m.workTask = msg.task
 	}
+	_ = m.syncCatalogList()
 	return m, waitForTaskCmd(msg.kind, msg.task)
 }
 
 func (m model) handleTaskClosed(msg taskClosedMsg) model {
 	switch msg.kind {
 	case streamTaskKind:
-		m.cancelTask(streamTaskKind)
+		if msg.task != nil && m.streamTask != msg.task {
+			return m
+		}
+		m.releaseTask(streamTaskKind)
 		m.streaming = false
 	case provisionTaskKind:
-		m.cancelTask(provisionTaskKind)
+		if msg.task != nil && m.workTask != msg.task {
+			return m
+		}
+		m.releaseTask(provisionTaskKind)
+		m.pendingRequest = nil
 	}
 	return m
 }
@@ -143,24 +202,34 @@ func (m model) updateModelScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.QuitAlt):
 		m.cancelAllTasks()
 		return m, tea.Quit
-	case key.Matches(msg, m.keys.MoveUp):
-		if m.cursor > 0 {
-			m.cursor--
-		}
-	case key.Matches(msg, m.keys.MoveDown):
-		if m.cursor < len(m.models)-1 {
-			m.cursor++
-		}
 	case key.Matches(msg, m.keys.Confirm):
-		if len(m.models) == 0 {
+		if len(m.catalog) == 0 {
 			m.status = "No model options available"
 			return m, nil
 		}
-		selected := m.models[m.cursor]
+		m.cursor = m.modelList.Index()
+		if m.cursor < 0 || m.cursor >= len(m.catalog) {
+			m.cursor = clamp(m.cursor, 0, len(m.catalog)-1)
+		}
+		selectedItem := m.catalog[m.cursor]
+		selected := selectedItem.QuantizedModel
 		m.selected = &selected
 		m.selectedName = selected.FileName
 		m.cfg.ActiveModelID = selected.ID
 		_ = config.SaveAppConfig(m.dataRoot, m.cfg)
+		m.syncBackendURL(m.runtime.CurrentBackendURL(), false)
+		probe := runtime.ProbeBackend(m.backendURL)
+		m.runtimeReady = probe.Ready
+		_ = m.syncCatalogList()
+		if selectedItem.Installed && sameRuntimePath(selectedItem.Path, m.state.ActiveModelPath) && probe.Ready {
+			m.screen = translateScreen
+			m.provisionStage = ""
+			m.downloadPercent = -1
+			m.loadPercent = -1
+			focusCmd := m.setFocus(textFocus)
+			m.status = fmt.Sprintf("Runtime already loaded: %s", selected.FileName)
+			return m, focusCmd
+		}
 
 		m.screen = provisionScreen
 		m.provisionStage = ""
@@ -169,16 +238,31 @@ func (m model) updateModelScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if localPath := m.localModelPath(selected.FileName); localPath != "" {
 			m.provisionStage = "load"
 			m.status = fmt.Sprintf("Loading local runtime: %s", selected.FileName)
-			m.startupRuntimePath = ""
-			return m, startActivateRuntimeCmd(m.dataRoot, m.runtime, m.state, localPath)
+			m.runtimeReady = false
+			return m, tea.Batch(startActivateRuntimeCmd(m.dataRoot, m.runtime, m.state, localPath), m.activity.Tick)
 		}
 
 		m.status = "Installing selected model..."
 		m.downloadPercent = 0
 		m.loadPercent = 0
-		return m, startInstallModelCmd(m.dataRoot, selected, m.runtime, m.state)
+		m.runtimeReady = false
+		return m, tea.Batch(startInstallModelCmd(m.dataRoot, selected, m.runtime, m.state), m.activity.Tick)
 	}
-	return m, nil
+
+	var cmd tea.Cmd
+	previous := m.modelList.Index()
+	m.modelList, cmd = m.modelList.Update(msg)
+	if current := m.modelList.Index(); current != previous {
+		m.cursor = current
+		if item, ok := m.currentCatalogItem(); ok {
+			if item.Installed {
+				m.status = fmt.Sprintf("Ready locally: %s", item.FileName)
+			} else {
+				m.status = fmt.Sprintf("Download required: %s", item.FileName)
+			}
+		}
+	}
+	return m, cmd
 }
 
 func (m model) updateProvisionScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -198,7 +282,7 @@ func (m model) updateTranslateScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 		m.status = "Back to model selection"
 		m.input.Blur()
 		m.instruction.Blur()
-		return m, nil, true
+		return m, m.syncCatalogList(), true
 	case key.Matches(msg, m.keys.Swap):
 		m.sourceLang, m.targetLang = m.targetLang, m.sourceLang
 		m.status = fmt.Sprintf("Languages swapped: %s -> %s", languages.Label(m.sourceLang), languages.Label(m.targetLang))
@@ -212,22 +296,38 @@ func (m model) updateTranslateScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 			m.status = "Input text is empty"
 			return m, nil, true
 		}
-		if probe := runtime.ProbeBackend(m.backendURL); !probe.Ready {
-			m.status = "Runtime is not ready. Re-open the model list and activate a local runtime."
-			return m, nil, true
-		}
-		m.cancelTask(streamTaskKind)
-		m.output = ""
-		m.syncOutputViewport()
-		m.status = "Streaming translation..."
-		m.streaming = true
+		m.syncBackendURL(m.runtime.CurrentBackendURL(), false)
+		probe := runtime.ProbeBackend(m.backendURL)
+		m.runtimeReady = probe.Ready
 		streamReq := translate.Request{
 			SourceLang:             m.sourceLang,
 			TargetLang:             m.targetLang,
 			Text:                   text,
 			TranslationInstruction: strings.TrimSpace(m.instruction.Value()),
 		}
-		return m, startStreamCmd(streamReq, m.service), true
+		if !probe.Ready {
+			modelPath := m.resolveActiveRuntimePath()
+			if modelPath == "" {
+				m.status = "No local runtime detected. Choose a model to install."
+				return m, nil, true
+			}
+			req := streamReq
+			m.pendingRequest = &req
+			m.screen = provisionScreen
+			m.provisionStage = "load"
+			m.downloadPercent = -1
+			m.loadPercent = 0
+			m.output = ""
+			m.syncOutputViewport()
+			m.status = fmt.Sprintf("Loading selected runtime: %s", m.currentRuntimeName())
+			return m, tea.Batch(startActivateRuntimeCmd(m.dataRoot, m.runtime, m.state, modelPath), m.activity.Tick), true
+		}
+		m.cancelTask(streamTaskKind)
+		m.output = ""
+		m.syncOutputViewport()
+		m.status = "Streaming translation..."
+		m.streaming = true
+		return m, tea.Batch(startStreamCmd(streamReq, m.service), m.activity.Tick), true
 	case key.Matches(msg, m.keys.FocusNext):
 		return m, m.rotateFocus(1), true
 	case key.Matches(msg, m.keys.FocusPrev):
@@ -302,7 +402,20 @@ func (m *model) cancelTask(kind taskKind) {
 	}
 }
 
+func (m *model) releaseTask(kind taskKind) {
+	switch kind {
+	case streamTaskKind:
+		m.streamTask = nil
+	case provisionTaskKind:
+		m.workTask = nil
+	}
+}
+
 func (m *model) cancelAllTasks() {
 	m.cancelTask(streamTaskKind)
 	m.cancelTask(provisionTaskKind)
+}
+
+func (m model) shouldAnimateActivity() bool {
+	return m.screen == provisionScreen || m.streaming
 }
