@@ -11,6 +11,9 @@ if ! command -v bun >/dev/null 2>&1; then
 fi
 
 cd "$WEBUI_DIR"
+if [[ ! -d node_modules ]]; then
+  bun install --frozen-lockfile
+fi
 bun run build
 
 rm -rf "$TARGET_DIR"
