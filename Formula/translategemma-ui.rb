@@ -4,27 +4,27 @@ class TranslategemmaUi < Formula
   desc "Local TranslateGemma app with CLI, TUI, and embedded Web UI"
   homepage "https://github.com/xzhih/translategemma-ui"
   license "MIT"
-  version "0.1.4"
+  version "0.1.6"
 
   on_macos do
     on_arm do
-      url "https://github.com/xzhih/translategemma-ui/releases/download/v0.1.4/translategemma-ui_0.1.4_darwin_arm64.tar.gz"
-      sha256 "2f56c4a91ba44e9ab34acfc86b2e14da41611b9f57baae83460976f502aea742"
+      url "https://github.com/xzhih/translategemma-ui/releases/download/v0.1.6/translategemma-ui_0.1.6_darwin_arm64.tar.gz"
+      sha256 "1a1eb941515d6cddc9e10214fd86c96a91f9a156d0f60638899118490a9a037c"
     end
     on_intel do
-      url "https://github.com/xzhih/translategemma-ui/releases/download/v0.1.4/translategemma-ui_0.1.4_darwin_amd64.tar.gz"
-      sha256 "19aad90ae8d1e5220e1eed8baab2ef80dd4fc56e28e80e3186fc1d543fd36dd4"
+      url "https://github.com/xzhih/translategemma-ui/releases/download/v0.1.6/translategemma-ui_0.1.6_darwin_amd64.tar.gz"
+      sha256 "4ca56932ebb518a444bf89677d136474f9971ee0527592c3253be5d0cdb03c5b"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/xzhih/translategemma-ui/releases/download/v0.1.4/translategemma-ui_0.1.4_linux_arm64.tar.gz"
-      sha256 "c0cd9fa01364c3d9e0adb68221c0cc9c6d19d8bd0b9abea46c0a5a812af1a56a"
+      url "https://github.com/xzhih/translategemma-ui/releases/download/v0.1.6/translategemma-ui_0.1.6_linux_arm64.tar.gz"
+      sha256 "e4679683645a34861adc95c26fbcbf969470ba2f6617da22073f4a4f669a17b7"
     end
     on_intel do
-      url "https://github.com/xzhih/translategemma-ui/releases/download/v0.1.4/translategemma-ui_0.1.4_linux_amd64.tar.gz"
-      sha256 "58cd1785bd86e0ba5553928b1fc7317592fc708ce8eb3b92b20cc57687123111"
+      url "https://github.com/xzhih/translategemma-ui/releases/download/v0.1.6/translategemma-ui_0.1.6_linux_amd64.tar.gz"
+      sha256 "3960f1c50748f4df9b26e26214ac3c3f48eaee14e100027386dff35bbc022619"
     end
   end
 
