@@ -5,9 +5,12 @@ package llamafile
 import (
 	"os"
 	"os/exec"
-	"syscall"
 	"time"
+
+	"golang.org/x/sys/windows"
 )
+
+const windowsStillActive = 259
 
 func prepareLaunchCommand(cmd *exec.Cmd) {}
 
@@ -22,17 +25,17 @@ func managedProcessAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	handle, err := syscall.OpenProcess(syscall.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+	handle, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
 	if err != nil {
 		return false
 	}
-	defer syscall.CloseHandle(handle)
+	defer windows.CloseHandle(handle)
 
 	var exitCode uint32
-	if err := syscall.GetExitCodeProcess(handle, &exitCode); err != nil {
+	if err := windows.GetExitCodeProcess(handle, &exitCode); err != nil {
 		return false
 	}
-	return exitCode == syscall.STILL_ACTIVE
+	return exitCode == windowsStillActive
 }
 
 func waitManagedProcessExit(pid int, timeout time.Duration) bool {
