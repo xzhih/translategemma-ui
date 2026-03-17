@@ -149,6 +149,13 @@ jobs:
   desktop-macos:
     needs: release
     runs-on: macos-latest
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY_SECRET: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -181,11 +188,8 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Prepare App Store Connect API key
-        if: ${{ secrets.APPLE_API_KEY != '' && secrets.APPLE_API_ISSUER != '' && secrets.APPLE_API_KEY_BASE64 != '' }}
+        if: ${{ env.APPLE_API_KEY != '' && env.APPLE_API_ISSUER != '' && env.APPLE_API_KEY_BASE64 != '' }}
         shell: bash
-        env:
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
         run: |
           set -euo pipefail
           key_dir="$RUNNER_TEMP/apple-api"
@@ -207,11 +211,6 @@ jobs:
         working-directory: desktop
         shell: bash
         env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY_SECRET: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
         run: |
           set -euo pipefail
@@ -228,6 +227,7 @@ jobs:
           bun run build
 
       - name: Package .app for release upload
+        id: package_desktop
         shell: bash
         run: |
           set -euo pipefail
@@ -250,11 +250,13 @@ jobs:
             "$zip_path" \
             "$dmg_path" \
             > desktop/src-tauri/target/release/bundle/desktop-macos-checksums.txt
+          echo "zip_path=$zip_path" >> "$GITHUB_OUTPUT"
+          echo "dmg_path=$dmg_path" >> "$GITHUB_OUTPUT"
 
       - name: Upload desktop artifacts to GitHub release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            desktop/src-tauri/target/release/bundle/macos/TranslateGemmaUI_${{ github.ref_name }}_macos_aarch64.zip
-            desktop/src-tauri/target/release/bundle/dmg/TranslateGemmaUI_${{ github.ref_name }}_macos_aarch64.dmg
+            ${{ steps.package_desktop.outputs.zip_path }}
+            ${{ steps.package_desktop.outputs.dmg_path }}
             desktop/src-tauri/target/release/bundle/desktop-macos-checksums.txt
