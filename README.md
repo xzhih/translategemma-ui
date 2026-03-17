@@ -116,7 +116,7 @@ translategemma-ui translate image \
 
 ## External Translation API
 
-TranslateGemmaUI now exposes a JSON text translation API that can be used by third-party apps, browser UIs, or automation scripts.
+TranslateGemmaUI exposes translation endpoints that can be used by third-party apps, browser UIs, or automation scripts.
 
 Base URL when running locally:
 
@@ -124,12 +124,14 @@ Base URL when running locally:
 
 Available endpoints:
 
-- `POST /api/translate` for single-shot JSON text translation
-- `POST /api/translate/stream` for streaming NDJSON text translation
-- `POST /api/translate/image` for multipart image translation
+- `POST /api/translate` for single-shot text translation
+- `POST /api/translate/stream` for streaming text translation
+- `POST /api/translate/image` for multipart image translation when the active runtime supports vision
 - `GET /healthz` for a simple health check
 
 `/api/translate*` and `/healthz` send permissive CORS headers and answer `OPTIONS` preflight requests, so browser-based clients from another origin can call them directly.
+
+Text endpoints accept either `application/json` or `application/x-www-form-urlencoded` payloads. Use `source_lang`, `target_lang`, `translation_instruction`, and either `input_text` or `text`. If `source_lang` is omitted it defaults to `auto`; if `target_lang` is omitted it defaults to `zh-CN`.
 
 Example JSON translation request:
 
@@ -176,7 +178,9 @@ curl http://127.0.0.1:8090/api/translate/stream \
   }'
 ```
 
-The streaming endpoint returns newline-delimited JSON events with `status`, `progress`, `delta`, `error`, and `done` event types.
+For successful streaming requests, the response is newline-delimited JSON with `status`, `progress`, `delta`, `error`, and `done` event types. Method errors or malformed payloads return regular HTTP error responses instead of an event stream.
+
+Image translation uses `multipart/form-data` with an `image_file` field plus optional `source_lang`, `target_lang`, and `translation_instruction` fields. It accepts JPEG, PNG, and GIF uploads up to 10 MB. If the active runtime does not support vision, the endpoint returns `active_runtime_no_image_support`.
 
 ## Runtime Model Source
 
