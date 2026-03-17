@@ -13,11 +13,22 @@ import {
   Download,
   ImageUp,
   LoaderCircle,
+  Moon,
+  SunMedium,
   Trash2,
   X,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { normalizeAppLocale, setAppLocale, type AppLocale } from "./i18n";
+import {
+  applyAppTheme,
+  detectInitialAppTheme,
+  readAppliedAppTheme,
+  setAppTheme,
+  watchSystemTheme,
+  type AppTheme,
+  type ResolvedAppTheme,
+} from "./theme";
 import "./App.css";
 
 type ScreenMode = "text" | "image";
@@ -244,6 +255,22 @@ function localizedLanguageLabel(option: LanguageOption, locale: AppLocale) {
   return option.labels[locale] ?? option.label;
 }
 
+function cn(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
+
+const screenSectionClassName =
+  "flex flex-col gap-4 rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-6 max-md:p-5";
+const editorGridClassName =
+  "grid h-[clamp(720px,68vh,760px)] grid-cols-2 grid-rows-[minmax(0,1fr)_clamp(132px,18vh,176px)] gap-3 max-lg:h-auto max-lg:grid-cols-1 max-lg:grid-rows-none";
+const outputPanelClassName =
+  "col-start-2 row-start-1 row-span-2 flex min-h-0 h-full items-start overflow-auto max-lg:col-auto max-lg:row-auto max-lg:row-span-1";
+const mutedLabelClassName = "text-[11px] font-normal text-[color:var(--muted-text)]";
+const detailTextClassName = "m-0 whitespace-pre-wrap break-words text-[13px] leading-[1.5]";
+const sideDrawerBackdropClassName = "absolute inset-0 border-0 bg-[color:var(--drawer-scrim)]";
+const sideDrawerPanelClassName =
+  "absolute top-0 right-0 flex h-dvh w-[408px] max-w-full flex-col gap-4 border-l border-[color:var(--border)] bg-[color:var(--drawer-surface)] p-6 shadow-[var(--panel-edge-shadow)]";
+
 function Button({
   children,
   variant = "secondary",
@@ -256,10 +283,24 @@ function Button({
   className?: string;
   type?: "button" | "submit";
 }) {
+  const variantClassName =
+    variant === "primary"
+      ? "border-transparent bg-[color:var(--primary)] text-[color:var(--primary-foreground)] hover:brightness-105"
+      : variant === "danger"
+        ? "border-[color:var(--danger-border)] bg-[color:var(--danger-bg)] text-[color:var(--danger-text)] hover:brightness-95"
+        : variant === "success"
+          ? "border-[color:var(--success-border)] bg-[color:var(--success-bg)] text-[color:var(--success-text)] hover:brightness-95"
+          : "border-[color:var(--border)] bg-[color:var(--muted)] text-[color:var(--text)] hover:bg-[color:var(--muted-strong)]";
   return (
     <button
       type={type}
-      className={`button button--${variant} ${className}`.trim()}
+      className={cn(
+        "inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] border px-4 py-2 text-sm font-medium transition-[background-color,border-color,color,filter] duration-200",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--background)]",
+        "disabled:pointer-events-none disabled:opacity-60",
+        variantClassName,
+        className,
+      )}
       {...props}
     >
       {children}
@@ -274,7 +315,24 @@ function StatusBadge({
   children: ReactNode;
   tone?: BadgeTone;
 }) {
-  return <span className={`status-badge status-badge--${tone}`.trim()}>{children}</span>;
+  const toneClassName =
+    tone === "accent"
+      ? "border-[color:var(--primary-soft-border)] bg-[color:var(--primary-soft-bg)] text-[color:var(--primary-soft-text)]"
+      : tone === "ready"
+        ? "border-[color:var(--success-border)] bg-[color:var(--success-bg)] text-[color:var(--success-text)]"
+        : tone === "warning"
+          ? "border-[color:var(--warning-border)] bg-[color:var(--warning-bg)] text-[color:var(--warning-text)]"
+          : "border-[color:var(--border)] bg-[color:var(--muted)] text-[color:var(--text-soft)]";
+  return (
+    <span
+      className={cn(
+        "inline-flex min-h-6 items-center rounded-full border px-2 py-1 text-[11px] font-semibold leading-none tracking-[0.02em]",
+        toneClassName,
+      )}
+    >
+      {children}
+    </span>
+  );
 }
 
 function describeModelState(model: ModelItem | null, needsModelSetup: boolean) {
@@ -342,10 +400,10 @@ function SelectField({
   const { t, i18n } = useTranslation();
   const currentLocale = normalizeAppLocale(i18n.resolvedLanguage) ?? "en";
   return (
-    <label className="field-button">
+    <label className="flex h-10 min-w-0 flex-1 items-center justify-between gap-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] px-3 text-sm font-medium text-[color:var(--text)] shadow-[var(--control-shadow)]">
       <select
         aria-label={t("accessibility.languageSelector")}
-        className="field-select"
+        className="w-full appearance-none border-0 bg-transparent text-inherit outline-none"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
@@ -358,7 +416,7 @@ function SelectField({
             </option>
           ))}
       </select>
-      <ChevronDown size={16} strokeWidth={2} />
+      <ChevronDown size={16} strokeWidth={2} className="shrink-0 text-[color:var(--muted-text)]" />
     </label>
   );
 }
@@ -372,10 +430,10 @@ function AppLocaleField({
 }) {
   const { t } = useTranslation();
   return (
-    <label className="field-button field-button--compact">
+    <label className="flex h-10 min-w-[156px] flex-[0_1_220px] items-center justify-between gap-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] px-3 text-sm font-medium text-[color:var(--text)] shadow-[var(--control-shadow)] max-w-[min(260px,100%)]">
       <select
         aria-label={t("accessibility.uiLanguageSelector")}
-        className="field-select"
+        className="w-full appearance-none border-0 bg-transparent text-inherit outline-none"
         value={value}
         onChange={(event) => onChange(event.target.value as AppLocale)}
       >
@@ -383,10 +441,39 @@ function AppLocaleField({
           <option key={option.code} value={option.code}>
             {option.label}
           </option>
-        ))}
+          ))}
       </select>
-      <ChevronDown size={16} strokeWidth={2} />
+      <ChevronDown size={16} strokeWidth={2} className="shrink-0 text-[color:var(--muted-text)]" />
     </label>
+  );
+}
+
+function ThemeToggle({
+  resolvedTheme,
+  onToggle,
+}: {
+  resolvedTheme: ResolvedAppTheme;
+  onToggle: () => void;
+}) {
+  const { t } = useTranslation();
+  const switchLabel =
+    resolvedTheme === "dark"
+      ? t("header.switchToLightTheme", { defaultValue: "Switch to light mode" })
+      : t("header.switchToDarkTheme", { defaultValue: "Switch to dark mode" });
+  return (
+    <button
+      type="button"
+      className={cn(
+        "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)] text-[color:var(--text-soft)] shadow-[var(--control-shadow)] transition-[background-color,border-color,color,filter] duration-200",
+        "hover:bg-[color:var(--muted-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--background)]",
+        "[&>svg]:block [&>svg]:shrink-0",
+      )}
+      aria-label={switchLabel}
+      title={switchLabel}
+      onClick={onToggle}
+    >
+      {resolvedTheme === "dark" ? <SunMedium size={19} strokeWidth={2} /> : <Moon size={19} strokeWidth={2} />}
+    </button>
   );
 }
 
@@ -403,18 +490,32 @@ function ScreenTopbar({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="screen-card__topbar">
-      <div className="compact-tabs" role="tablist" aria-label={t("accessibility.translationMode")}>
+    <div className="flex items-center justify-between gap-4 max-md:flex-wrap">
+      <div
+        className="inline-flex gap-1 rounded-xl border border-[color:var(--primary-soft-border)] bg-[color:var(--primary-soft-panel)] p-1"
+        role="tablist"
+        aria-label={t("accessibility.translationMode")}
+      >
         <button
           type="button"
-          className={`compact-tabs__item ${activeMode === "text" ? "compact-tabs__item--active" : ""}`.trim()}
+          className={cn(
+            "appearance-none border-0 bg-transparent shadow-none outline-none",
+            "inline-flex h-9 items-center justify-center rounded-[10px] px-4 text-sm font-bold text-[color:var(--muted-text)] transition-[background-color,color,box-shadow] duration-200",
+            "hover:bg-[color:var(--card)]/70 focus-visible:ring-2 focus-visible:ring-[color:var(--primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--card)]",
+            activeMode === "text" && "bg-white text-[color:var(--primary)] shadow-[var(--control-shadow)] dark:bg-[color:var(--card)]",
+          )}
           onClick={onSwitchText}
         >
           {t("tabs.text")}
         </button>
         <button
           type="button"
-          className={`compact-tabs__item ${activeMode === "image" ? "compact-tabs__item--active" : ""}`.trim()}
+          className={cn(
+            "appearance-none border-0 bg-transparent shadow-none outline-none",
+            "inline-flex h-9 items-center justify-center rounded-[10px] px-4 text-sm font-bold text-[color:var(--muted-text)] transition-[background-color,color,box-shadow] duration-200",
+            "hover:bg-[color:var(--card)]/70 focus-visible:ring-2 focus-visible:ring-[color:var(--primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--card)]",
+            activeMode === "image" && "bg-white text-[color:var(--primary)] shadow-[var(--control-shadow)] dark:bg-[color:var(--card)]",
+          )}
           onClick={onSwitchImage}
         >
           {t("tabs.image")}
@@ -444,9 +545,14 @@ function TranslationLanguageRow({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="language-row">
+    <div className="flex items-center gap-2.5 max-md:flex-wrap">
       <SelectField value={sourceValue} options={options} onChange={onSourceChange} allowAuto={sourceAllowsAuto} />
-      <button type="button" className="swap-button" aria-label={t("accessibility.swapLanguages")} onClick={onSwap}>
+      <button
+        type="button"
+        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[color:var(--border)] bg-[color:var(--muted)] text-[color:var(--text)] transition-colors hover:bg-[color:var(--muted-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--background)]"
+        aria-label={t("accessibility.swapLanguages")}
+        onClick={onSwap}
+      >
         <ArrowLeftRight size={16} strokeWidth={2} />
       </button>
       <SelectField value={targetValue} options={options} onChange={onTargetChange} allowAuto={false} />
@@ -464,10 +570,10 @@ function TranslationActionsRow({
   rightAction?: ReactNode;
 }) {
   return (
-    <div className="actions-row">
-      <div className="actions-row__side actions-row__side--start">{leftAction}</div>
-      <div className="actions-row__center">{centerAction}</div>
-      <div className="actions-row__side actions-row__side--end">{rightAction}</div>
+    <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 max-md:grid-cols-1">
+      <div className="flex min-h-10 items-center justify-start max-md:justify-stretch max-md:[&>*]:w-full">{leftAction}</div>
+      <div className="flex items-center justify-center max-md:justify-stretch max-md:[&>*]:w-full">{centerAction}</div>
+      <div className="flex min-h-10 items-center justify-end max-md:justify-stretch max-md:[&>*]:w-full">{rightAction}</div>
     </div>
   );
 }
@@ -480,8 +586,170 @@ function ScrollView({
   children: ReactNode;
 }) {
   return (
-    <div className="scroll-view" role="region" aria-label={ariaLabel}>
-      <div className="scroll-view__viewport">{children}</div>
+    <div className="min-h-0 flex-1 overflow-hidden" role="region" aria-label={ariaLabel}>
+      <div className="scroll-view__viewport flex h-full flex-col gap-3 overflow-x-hidden overflow-y-auto pr-1 [scrollbar-gutter:stable] [overscroll-behavior:contain]">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function IconButton({
+  children,
+  className,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "inline-flex h-7 w-7 items-center justify-center rounded-full border-0 bg-transparent p-0 text-[color:var(--muted-text)] transition-colors hover:bg-[color:var(--muted)] hover:text-[color:var(--text)]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--drawer-surface)]",
+        className,
+      )}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+function OutlineIconButton({
+  children,
+  className,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "inline-flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--border)] bg-[color:var(--card)] p-0 text-[color:var(--text)] shadow-[var(--control-shadow)] transition-colors hover:bg-[color:var(--muted)]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--drawer-surface)]",
+        className,
+      )}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Panel({
+  children,
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement> & {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "min-h-[clamp(220px,34vh,340px)] rounded-[20px] border border-[color:var(--border)] bg-[color:var(--card)] p-3.5",
+        className,
+      )}
+      {...props}
+    >
+      {children}
+    </div>
+  );
+}
+
+function SectionCard({
+  children,
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLElement> & {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={cn(screenSectionClassName, className)} {...props}>
+      {children}
+    </section>
+  );
+}
+
+function OutputPanel({
+  value,
+  placeholder,
+  className,
+}: {
+  value: string;
+  placeholder: string;
+  className?: string;
+}) {
+  return (
+    <Panel className={cn(outputPanelClassName, !value && "text-left", className)}>
+      <p
+        className={cn(
+          "m-0 whitespace-pre-wrap break-words text-sm leading-[1.45]",
+          !value && "text-[color:var(--muted-text)]",
+        )}
+      >
+        {value || placeholder}
+      </p>
+    </Panel>
+  );
+}
+
+function LoadingLabel({ children }: { children: ReactNode }) {
+  return (
+    <>
+      <LoaderCircle size={16} className="spin" />
+      <span>{children}</span>
+    </>
+  );
+}
+
+function MetaLabel({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return <span className={cn(mutedLabelClassName, className)}>{children}</span>;
+}
+
+function SideDrawer({
+  ariaLabel,
+  children,
+  closeLabel,
+  onClose,
+  title,
+  titleClassName = "text-lg",
+}: {
+  ariaLabel: string;
+  children: ReactNode;
+  closeLabel: string;
+  onClose: () => void;
+  title: string;
+  titleClassName?: string;
+}) {
+  return (
+    <div className="fixed inset-0 z-20">
+      <button type="button" aria-label={closeLabel} className={sideDrawerBackdropClassName} onClick={onClose} />
+      <aside
+        className={sideDrawerPanelClassName}
+        role="dialog"
+        aria-modal="true"
+        aria-label={ariaLabel}
+      >
+        <div className="flex min-h-8 items-center justify-between">
+          <h2 className={cn("m-0 font-semibold", titleClassName)}>{title}</h2>
+          <IconButton aria-label={closeLabel} onClick={onClose}>
+            <X size={18} strokeWidth={2} />
+          </IconButton>
+        </div>
+        {children}
+      </aside>
     </div>
   );
 }
@@ -501,14 +769,21 @@ function InstructionField({
 }) {
   const { t } = useTranslation();
   return (
-    <label className={`instruction-card ${className ?? ""}`.trim()}>
-      <div className="instruction-card__copy">
-        <span className="instruction-card__label">{t("instruction.label")}</span>
-        <span className="instruction-card__hint">{t("instruction.hint")}</span>
+    <label
+      className={cn(
+        "flex min-w-0 min-h-0 flex-col gap-2.5 rounded-xl border border-[color:var(--border)] bg-[color:var(--muted-strong)] p-3",
+        className,
+      )}
+    >
+      <div className="flex flex-col gap-1">
+        <span className="text-xs font-bold uppercase tracking-[0.04em] text-[color:var(--muted-text)]">
+          {t("instruction.label")}
+        </span>
+        <span className="text-xs leading-[1.45] text-[color:var(--muted-text)]">{t("instruction.hint")}</span>
       </div>
       <textarea
         aria-label={ariaLabel}
-        className="instruction-textarea"
+        className="min-h-[72px] max-h-40 flex-1 resize-none overflow-auto border-0 bg-transparent text-[color:var(--text)] outline-none"
         placeholder={placeholder}
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -558,7 +833,7 @@ function TextHomeScreen({
 }) {
   const { t } = useTranslation();
   return (
-    <section className="screen-card">
+    <SectionCard>
       <ScreenTopbar
         activeMode="text"
         onSwitchText={() => undefined}
@@ -581,15 +856,9 @@ function TextHomeScreen({
         centerAction={
           <Button variant="primary" onClick={onTranslate} disabled={busy || modelLoading}>
             {modelLoading ? (
-              <>
-                <LoaderCircle size={16} className="spin" />
-                <span>{t("buttons.loadingModel")}</span>
-              </>
+              <LoadingLabel>{t("buttons.loadingModel")}</LoadingLabel>
             ) : busy ? (
-              <>
-                <LoaderCircle size={16} className="spin" />
-                <span>{t("buttons.translating")}</span>
-              </>
+              <LoadingLabel>{t("buttons.translating")}</LoadingLabel>
             ) : (
               t("buttons.translate")
             )}
@@ -598,28 +867,26 @@ function TextHomeScreen({
         rightAction={<Button onClick={onCopyOutput}>{t("buttons.copy")}</Button>}
       />
 
-      <div className="editor-grid editor-grid--text">
-        <div className="editor-panel editor-panel--source">
+      <div className={editorGridClassName}>
+        <Panel className="col-start-1 row-start-1 flex min-h-0 items-stretch overflow-hidden max-lg:col-auto max-lg:row-auto">
           <textarea
             aria-label={t("textScreen.sourceTextAria")}
-            className="editor-textarea"
+            className="h-full min-h-0 w-full resize-none overflow-auto border-0 bg-transparent font-[var(--font-sans)] text-sm leading-[1.45] text-[color:var(--text)] outline-none"
             placeholder={t("textScreen.sourceTextPlaceholder")}
             value={textInput}
             onChange={(event) => onTextInputChange(event.target.value)}
           />
-        </div>
-        <div className={`editor-panel editor-panel--output ${textOutput ? "" : "editor-panel--placeholder"}`.trim()}>
-          <p>{textOutput || t("textScreen.resultPlaceholder")}</p>
-        </div>
+        </Panel>
+        <OutputPanel value={textOutput} placeholder={t("textScreen.resultPlaceholder")} />
         <InstructionField
-          className="instruction-card--inline"
+          className="col-start-1 row-start-2 max-lg:col-auto max-lg:row-auto"
           ariaLabel={t("textScreen.instructionAria")}
           placeholder={t("instruction.textPlaceholder")}
           value={instruction}
           onChange={onInstructionChange}
         />
       </div>
-    </section>
+    </SectionCard>
   );
 }
 
@@ -690,7 +957,7 @@ function ImageScreen({
 }) {
   const { t } = useTranslation();
   return (
-    <section className="screen-card screen-card--image">
+    <SectionCard>
       <ScreenTopbar
         activeMode="image"
         onSwitchText={onSwitchText}
@@ -716,15 +983,9 @@ function ImageScreen({
             disabled={busy || modelLoading || (!visionEnabled && !needsModelSetup)}
           >
             {modelLoading ? (
-              <>
-                <LoaderCircle size={16} className="spin" />
-                <span>{t("buttons.loadingModel")}</span>
-              </>
+              <LoadingLabel>{t("buttons.loadingModel")}</LoadingLabel>
             ) : busy ? (
-              <>
-                <LoaderCircle size={16} className="spin" />
-                <span>{t("buttons.translating")}</span>
-              </>
+              <LoadingLabel>{t("buttons.translating")}</LoadingLabel>
             ) : (
               t("buttons.translate")
             )}
@@ -733,9 +994,15 @@ function ImageScreen({
         rightAction={<Button onClick={onCopy}>{t("buttons.copy")}</Button>}
       />
 
-      <div className="editor-grid editor-grid--image">
-        <div
-          className={`upload-panel upload-panel--image ${visionEnabled ? "upload-panel--dropzone" : ""} ${uploadedPreviewUrl ? "upload-panel--filled" : "upload-panel--empty"} ${dragActive ? "upload-panel--drag-active" : ""}`.trim()}
+      <div className={cn("editor-grid--image", editorGridClassName)}>
+        <section
+          className={cn(
+            "upload-panel--image col-start-1 row-start-1 min-h-[clamp(220px,34vh,340px)] rounded-[20px] border border-[color:var(--border)] bg-[color:var(--card)] p-3.5",
+            "flex min-h-0 h-auto flex-col items-center gap-3 text-center max-lg:col-auto max-lg:row-auto",
+            uploadedPreviewUrl ? "justify-start" : "justify-center",
+            visionEnabled && "relative border-dashed transition-[border-color,background-color,box-shadow]",
+            dragActive && "border-[color:var(--primary)] bg-[color:var(--dropzone-active-bg)] shadow-[inset_0_0_0_1px_var(--dropzone-active-ring)]",
+          )}
           role="region"
           aria-label={t("imageScreen.uploadAreaAria")}
           onDragEnter={visionEnabled ? onDragEnter : undefined}
@@ -744,15 +1011,12 @@ function ImageScreen({
           onDrop={visionEnabled ? onDrop : undefined}
         >
           {!visionEnabled ? (
-            <div className="upload-panel__notice">
-              <p className="upload-panel__title">{t("imageScreen.requiresVisionTitle")}</p>
-              <p className="upload-panel__hint">{t("imageScreen.requiresVisionHint")}</p>
+            <div className="flex max-w-[360px] flex-col items-center gap-2.5">
+              <p className="m-0 text-[15px] font-semibold">{t("imageScreen.requiresVisionTitle")}</p>
+              <p className="m-0 text-[13px] text-[color:var(--muted-text)]">{t("imageScreen.requiresVisionHint")}</p>
               <Button variant="primary" onClick={onEnableVision} disabled={modelBusy}>
                 {modelBusy ? (
-                  <>
-                    <LoaderCircle size={16} className="spin" />
-                    <span>{t("buttons.switching")}</span>
-                  </>
+                  <LoadingLabel>{t("buttons.switching")}</LoadingLabel>
                 ) : (
                   t("buttons.switchToVision")
                 )}
@@ -771,9 +1035,9 @@ function ImageScreen({
               />
               {uploadedPreviewUrl ? (
                 <>
-                  <div className="upload-preview upload-preview--large">
+                  <div className="w-full max-w-[480px]">
                     <img
-                      className="upload-preview__image"
+                      className="block w-full rounded-2xl object-contain"
                       src={uploadedPreviewUrl}
                       alt={
                         uploadedFileName
@@ -782,9 +1046,9 @@ function ImageScreen({
                       }
                     />
                   </div>
-                  {uploadedFileName ? <p className="upload-panel__filename">{uploadedFileName}</p> : null}
-                  <p className="upload-panel__hint">{t("imageScreen.replaceHint")}</p>
-                  <div className="upload-panel__actions">
+                  {uploadedFileName ? <p className="m-0 text-[13px] text-[color:var(--muted-text)]">{uploadedFileName}</p> : null}
+                  <p className="m-0 text-[13px] text-[color:var(--muted-text)]">{t("imageScreen.replaceHint")}</p>
+                  <div className="flex flex-wrap justify-center gap-2.5">
                     <Button variant="primary" onClick={onUploadClick}>{t("buttons.chooseAnother")}</Button>
                     <Button onClick={onUploadReset}>{t("buttons.reset")}</Button>
                   </div>
@@ -792,27 +1056,27 @@ function ImageScreen({
               ) : (
                 <>
                   <ImageUp size={30} strokeWidth={1.8} />
-                  <p className="upload-panel__title">{t("imageScreen.uploadTitle")}</p>
-                  <p className="upload-panel__hint">{t("imageScreen.uploadHint", { maxUploadMB })}</p>
+                  <p className="m-0 text-[15px] font-semibold">{t("imageScreen.uploadTitle")}</p>
+                  <p className="m-0 text-[13px] text-[color:var(--muted-text)]">
+                    {t("imageScreen.uploadHint", { maxUploadMB })}
+                  </p>
                   <Button variant="primary" onClick={onUploadClick}>{t("buttons.uploadImage")}</Button>
                 </>
               )}
             </>
           )}
-        </div>
+        </section>
 
-        <div className={`editor-panel editor-panel--output ${imageOutput ? "" : "editor-panel--placeholder"}`.trim()}>
-          {imageOutput ? <p>{imageOutput}</p> : <p>{t("textScreen.resultPlaceholder")}</p>}
-        </div>
+        <OutputPanel value={imageOutput} placeholder={t("textScreen.resultPlaceholder")} />
         <InstructionField
-          className="instruction-card--inline"
+          className="instruction-card--inline col-start-1 row-start-2 max-lg:col-auto max-lg:row-auto"
           ariaLabel={t("imageScreen.instructionAria")}
           placeholder={t("instruction.imagePlaceholder")}
           value={instruction}
           onChange={onInstructionChange}
         />
       </div>
-    </section>
+    </SectionCard>
   );
 }
 
@@ -831,21 +1095,24 @@ function DownloadProgressCard({
 
   return (
     <div
-      className={`download-card ${compact ? "download-card--compact" : ""}`.trim()}
+      className={cn(
+        "flex flex-col gap-2.5 rounded-xl border border-[color:var(--primary-soft-border)] bg-[color:var(--primary-soft-bg)] shadow-[var(--download-shadow)]",
+        compact ? "p-3" : "p-3.5",
+      )}
       role="status"
       aria-live="polite"
       aria-label={t("model.downloadProgressAria", { defaultValue: "Model download progress" })}
     >
-      <div className="download-card__header">
-        <div className="download-card__copy">
-          <span className="download-card__eyebrow">
+      <div className="flex items-start justify-between gap-3 max-md:flex-col max-md:items-stretch">
+        <div className="min-w-0 flex-1">
+          <span className="text-[11px] font-bold uppercase tracking-[0.04em] text-[color:var(--primary)]">
             {t("model.downloadProgress", { defaultValue: "Downloading model" })}
           </span>
-          <strong className="download-card__title">{download.modelName}</strong>
+          <strong className="block overflow-wrap-anywhere text-sm font-semibold text-[color:var(--text)]">{download.modelName}</strong>
         </div>
         <Button
           variant="danger"
-          className="download-card__cancel"
+          className="self-start whitespace-nowrap"
           onClick={onCancel}
           disabled={download.canceling}
         >
@@ -854,17 +1121,20 @@ function DownloadProgressCard({
             : t("buttons.cancelDownload", { defaultValue: "Cancel" })}
         </Button>
       </div>
-      <div className="download-card__track" aria-hidden="true">
-        <span className="download-card__bar" style={{ width: `${progressPercent}%` }} />
+      <div className="h-2.5 overflow-hidden rounded-full bg-[color:var(--download-track)]" aria-hidden="true">
+        <span
+          className="block h-full rounded-[inherit] bg-[linear-gradient(90deg,var(--download-bar-start)_0%,var(--download-bar-end)_100%)] transition-[width] duration-200"
+          style={{ width: `${progressPercent}%` }}
+        />
       </div>
-      <div className="download-card__meta">
+      <div className="flex flex-wrap items-center justify-between gap-2.5 text-xs font-semibold text-[color:var(--text-soft)]">
         <span>{progressPercent.toFixed(progressPercent >= 10 ? 0 : 1)}%</span>
         <span>
           {formatBinarySize(download.downloadedBytes)} / {totalLabel}
         </span>
         <span>{formatTransferRate(download.speedBytesPerSecond)}</span>
       </div>
-      <p className="download-card__message">{download.message}</p>
+      <p className="m-0 text-xs leading-[1.45] text-[color:var(--muted-text)]">{download.message}</p>
     </div>
   );
 }
@@ -896,86 +1166,95 @@ function ModelDrawer({
   }
 
   return (
-    <div className="overlay overlay--model">
-      <button type="button" aria-label={t("model.closeDrawer")} className="overlay__scrim" onClick={onClose} />
-      <aside className="drawer drawer--model" role="dialog" aria-modal="true" aria-label={t("model.drawerTitle")}>
-        <div className="drawer__header">
-          <h2>{t("model.drawerTitle")}</h2>
-          <button type="button" className="icon-button" aria-label={t("model.closeList")} onClick={onClose}>
-            <X size={18} strokeWidth={2} />
-          </button>
-        </div>
-        <ScrollView ariaLabel={t("model.listAria")}>
-          {models.map((model) => {
-            const busy = busyModelId === model.id;
-            const activeDownload = downloadState?.modelId === model.id ? downloadState : null;
-            const showDownloadProgress = !!activeDownload;
-            const modelState = describeModelState(model, false);
-            const actionVariant = model.active ? "success" : model.selected ? "secondary" : "primary";
-            const actionLabel = busy
-              ? showDownloadProgress
-                ? t("buttons.downloading", { defaultValue: "Downloading" })
-                : t("buttons.loadingModel")
-              : model.active
-                ? t("buttons.active")
-                : model.selected
-                  ? t("buttons.selected")
-                  : t("buttons.useNow");
-            return (
-              <div key={model.id} className={`model-item ${model.active ? "model-item--active" : ""}`.trim()}>
-                <div className="model-item__top">
-                  <span className="model-item__name">{model.fileName}</span>
-                </div>
-                <div className="model-item__badges">
-                  <StatusBadge tone={modelState.tone}>{t(modelState.labelKey)}</StatusBadge>
-                  <StatusBadge tone={model.visionCapable ? "accent" : "neutral"}>
-                    {model.visionCapable ? t("model.capabilityVision") : t("model.capabilityText")}
-                  </StatusBadge>
-                  {model.recommended ? <StatusBadge>{t("model.recommended")}</StatusBadge> : null}
-                </div>
-                <span className="model-item__speed">
-                  {model.size} · {model.installed ? t("model.sourceInstalled") : t("model.sourceRemote")}
-                </span>
-                {model.installed ? (
-                  <div className="model-item__actions">
-                    <Button
-                      variant={actionVariant}
-                      className="button--full"
-                      onClick={() => onUseNow(model.id)}
-                      disabled={busy || model.selected}
-                    >
-                      {busy ? <LoaderCircle size={16} className="spin" /> : null}
-                      <span>{actionLabel}</span>
-                    </Button>
-                    <Button
-                      variant="danger"
-                      className="model-item__delete"
-                      onClick={() => onDelete(model.id)}
-                      disabled={busy}
-                    >
-                      <Trash2 size={16} strokeWidth={2} />
-                      <span>{t("buttons.delete")}</span>
-                    </Button>
-                  </div>
-                ) : activeDownload ? (
-                  <DownloadProgressCard download={activeDownload} onCancel={onCancelDownload} compact />
-                ) : (
+    <SideDrawer
+      ariaLabel={t("model.drawerTitle")}
+      closeLabel={t("model.closeDrawer")}
+      onClose={onClose}
+      title={t("model.drawerTitle")}
+    >
+      <ScrollView ariaLabel={t("model.listAria")}>
+        {models.map((model) => {
+          const busy = busyModelId === model.id;
+          const activeDownload = downloadState?.modelId === model.id ? downloadState : null;
+          const showDownloadProgress = !!activeDownload;
+          const modelState = describeModelState(model, false);
+          const actionVariant = model.active ? "success" : model.selected ? "secondary" : "primary";
+          const actionLabel = busy
+            ? showDownloadProgress
+              ? t("buttons.downloading", { defaultValue: "Downloading" })
+              : t("buttons.loadingModel")
+            : model.active
+              ? t("buttons.active")
+              : model.selected
+                ? t("buttons.selected")
+                : t("buttons.useNow");
+          return (
+            <div
+              key={model.id}
+              className={cn(
+                "flex flex-col gap-2 rounded-[10px] border p-3 text-left transition-colors",
+                model.active
+                  ? "border-[color:var(--primary)] bg-[color:var(--muted)]"
+                  : "border-[color:var(--border)] bg-[color:var(--card)]",
+              )}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-sm font-semibold leading-5 break-words text-[color:var(--text)]">{model.fileName}</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge tone={modelState.tone}>{t(modelState.labelKey)}</StatusBadge>
+                <StatusBadge tone={model.visionCapable ? "accent" : "neutral"}>
+                  {model.visionCapable ? t("model.capabilityVision") : t("model.capabilityText")}
+                </StatusBadge>
+                {model.recommended ? <StatusBadge>{t("model.recommended")}</StatusBadge> : null}
+              </div>
+              <span className="text-xs font-medium text-[color:var(--muted-text)]">
+                {model.size} · {model.installed ? t("model.sourceInstalled") : t("model.sourceRemote")}
+              </span>
+              {model.installed ? (
+                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-stretch gap-2">
                   <Button
-                    variant="primary"
-                    className="button--full"
-                    onClick={() => onDownload(model.id)}
+                    variant={actionVariant}
+                    className="w-full"
+                    onClick={() => onUseNow(model.id)}
+                    disabled={busy || model.selected}
+                  >
+                    {busy ? <LoadingLabel>{actionLabel}</LoadingLabel> : <span>{actionLabel}</span>}
+                  </Button>
+                  <Button
+                    variant="danger"
+                    className="justify-self-end"
+                    onClick={() => onDelete(model.id)}
                     disabled={busy}
                   >
-                    {busy ? <LoaderCircle size={16} className="spin" /> : <Download size={16} strokeWidth={2} />}
-                    <span>{t("buttons.download")}</span>
+                    <Trash2 size={16} strokeWidth={2} />
+                    <span>{t("buttons.delete")}</span>
                   </Button>
-                )}
-              </div>
-            );
-          })}
-        </ScrollView>
-      </aside>
-    </div>
+                </div>
+              ) : activeDownload ? (
+                <DownloadProgressCard download={activeDownload} onCancel={onCancelDownload} compact />
+              ) : (
+                <Button
+                  variant="primary"
+                  className="w-full"
+                  onClick={() => onDownload(model.id)}
+                  disabled={busy}
+                >
+                  {busy ? (
+                    <LoadingLabel>{t("buttons.download")}</LoadingLabel>
+                  ) : (
+                    <>
+                      <Download size={16} strokeWidth={2} />
+                      <span>{t("buttons.download")}</span>
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+          );
+        })}
+      </ScrollView>
+    </SideDrawer>
   );
 }
 
@@ -1004,74 +1283,85 @@ function HistoryDrawer({
   }
 
   return (
-    <div className="overlay overlay--history">
-      <button type="button" aria-label={t("history.closeDrawer")} className="overlay__scrim" onClick={onClose} />
-      <aside className="drawer drawer--history" role="dialog" aria-modal="true" aria-label={t("history.drawerTitle")}>
-        <div className="drawer__header drawer__header--history">
-          <h2>{t("history.drawerTitle")}</h2>
-          <button type="button" className="icon-button" aria-label={t("history.closeList")} onClick={onClose}>
-            <X size={20} strokeWidth={2} />
-          </button>
-        </div>
-        <ScrollView ariaLabel={t("history.listAria")}>
-          {entries.map((entry) => (
-            <button type="button" key={entry.id} className="history-card" onClick={() => onOpen(entry.id)}>
-              <div className="history-card__meta">
-                <span className="history-card__time">{entry.when}</span>
+    <SideDrawer
+      ariaLabel={t("history.drawerTitle")}
+      closeLabel={t("history.closeDrawer")}
+      onClose={onClose}
+      title={t("history.drawerTitle")}
+      titleClassName="text-xl"
+    >
+      <ScrollView ariaLabel={t("history.listAria")}>
+        {entries.map((entry) => (
+          <button
+            type="button"
+            key={entry.id}
+            className="flex w-full flex-col gap-2.5 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] p-3 text-left transition-colors hover:bg-[color:var(--muted)]"
+            onClick={() => onOpen(entry.id)}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[13px] font-semibold">{entry.when}</span>
+              <span
+                className="inline-flex min-h-6 items-center gap-1 rounded-full border border-[color:var(--danger-border)] bg-[color:var(--danger-bg)] px-2 py-1 text-xs font-medium text-[color:var(--danger-text)]"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDelete(entry.id);
+                }}
+              >
+                <Trash2 size={14} strokeWidth={2} />
+                <span>{t("buttons.delete")}</span>
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex flex-1 flex-col gap-0.5">
+                <MetaLabel>{t("history.source")}</MetaLabel>
                 <span
-                  className="history-card__delete"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onDelete(entry.id);
-                  }}
+                  className="[display:-webkit-box] overflow-hidden text-xs font-medium leading-[1.35] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
+                  title={languageLabel(entry.source)}
                 >
-                  <Trash2 size={14} strokeWidth={2} />
-                  <span>{t("buttons.delete")}</span>
+                  {languageLabel(entry.source)}
                 </span>
               </div>
-              <div className="history-card__languages">
-                <div>
-                  <span className="history-card__label">{t("history.source")}</span>
-                  <span className="history-card__value" title={languageLabel(entry.source)}>
-                    {languageLabel(entry.source)}
-                  </span>
-                </div>
-                <div>
-                  <span className="history-card__label">{t("history.target")}</span>
-                  <span className="history-card__value" title={languageLabel(entry.target)}>
-                    {languageLabel(entry.target)}
-                  </span>
-                </div>
+              <div className="flex flex-1 flex-col gap-0.5">
+                <MetaLabel>{t("history.target")}</MetaLabel>
+                <span
+                  className="[display:-webkit-box] overflow-hidden text-xs font-medium leading-[1.35] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
+                  title={languageLabel(entry.target)}
+                >
+                  {languageLabel(entry.target)}
+                </span>
               </div>
-              <div className="history-card__block">
-                <span className="history-card__label">{t("history.sourceText")}</span>
-                <p className="history-card__preview" title={entry.input}>
-                  {entry.input}
-                </p>
-              </div>
-              <div className="history-card__block">
-                <span className="history-card__label">{t("history.targetText")}</span>
-                <p className="history-card__preview history-card__target" title={entry.output}>
-                  {entry.output}
-                </p>
-              </div>
-            </button>
-          ))}
-        </ScrollView>
-        <div className="drawer__footer drawer__footer--history">
-          <Button variant="danger" className="button--full" onClick={onClear} disabled={clearing || entries.length === 0}>
-            {clearing ? (
-              <>
-                <LoaderCircle size={16} className="spin" />
-                <span>{t("buttons.clearingHistory")}</span>
-              </>
-            ) : (
-              t("buttons.clearHistory")
-            )}
-          </Button>
-        </div>
-      </aside>
-    </div>
+            </div>
+            <div className="flex flex-col gap-1">
+              <MetaLabel>{t("history.sourceText")}</MetaLabel>
+              <p
+                className="[display:-webkit-box] overflow-hidden whitespace-normal text-xs leading-[1.45] text-[color:var(--muted-text)] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
+                title={entry.input}
+              >
+                {entry.input}
+              </p>
+            </div>
+            <div className="flex flex-col gap-1">
+              <MetaLabel>{t("history.targetText")}</MetaLabel>
+              <p
+                className="[display:-webkit-box] overflow-hidden whitespace-normal text-xs leading-[1.45] text-[color:var(--text)] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
+                title={entry.output}
+              >
+                {entry.output}
+              </p>
+            </div>
+          </button>
+        ))}
+      </ScrollView>
+      <div className="flex items-center gap-3 pt-1">
+        <Button variant="danger" className="w-full" onClick={onClear} disabled={clearing || entries.length === 0}>
+          {clearing ? (
+            <LoadingLabel>{t("buttons.clearingHistory")}</LoadingLabel>
+          ) : (
+            t("buttons.clearHistory")
+          )}
+        </Button>
+      </div>
+    </SideDrawer>
   );
 }
 
@@ -1092,45 +1382,50 @@ function HistoryDetailModal({
   }
 
   return (
-    <div className="overlay overlay--modal">
-      <div className="overlay__scrim overlay__scrim--solid" onClick={onClose} />
-      <div className="history-modal" role="dialog" aria-modal="true" aria-label={t("history.detailTitle")}>
-        <div className="history-modal__top">
-          <div className="history-modal__time">
-            <span>{t("history.translationTime")}</span>
+    <div className="fixed inset-0 z-20 flex items-center justify-center overflow-auto p-6">
+      <div className="absolute inset-0 bg-[color:var(--overlay-solid)]" onClick={onClose} />
+      <div
+        className="relative z-10 m-0 max-h-[calc(100vh-48px)] w-[min(985px,calc(100vw-48px))] overflow-y-auto rounded-lg border border-[color:var(--border)] bg-[color:var(--drawer-surface)] p-6 shadow-[var(--panel-shadow)] max-md:p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("history.detailTitle")}
+      >
+        <div className="mb-3 flex items-start justify-between gap-3 max-md:flex-col max-md:items-stretch">
+          <div className="flex w-[220px] flex-col gap-1.5 max-md:w-full">
+            <MetaLabel>{t("history.translationTime")}</MetaLabel>
             <strong>{entry.when}</strong>
           </div>
-          <button type="button" className="icon-button icon-button--outline" aria-label={t("history.closeDetail")} onClick={onClose}>
+          <OutlineIconButton aria-label={t("history.closeDetail")} onClick={onClose}>
             <X size={16} strokeWidth={2} />
-          </button>
+          </OutlineIconButton>
         </div>
 
-        <div className="history-modal__pair">
-          <div className="history-modal__pill">
-            <span>{t("history.source")}</span>
-            <strong>{languageLabel(entry.source)}</strong>
+        <div className="mb-3 flex items-center gap-3 max-md:flex-col max-md:items-stretch">
+          <div className="flex flex-1 flex-col gap-1 rounded-md bg-[color:var(--muted)] p-3">
+            <MetaLabel>{t("history.source")}</MetaLabel>
+            <strong className="text-sm font-normal">{languageLabel(entry.source)}</strong>
           </div>
-          <div className="history-modal__pill">
-            <span>{t("history.target")}</span>
-            <strong>{languageLabel(entry.target)}</strong>
-          </div>
-        </div>
-
-        <div className="history-modal__section">
-          <span>{t("history.sourceText")}</span>
-          <div className="history-modal__box">
-            <p>{entry.input}</p>
+          <div className="flex flex-1 flex-col gap-1 rounded-md bg-[color:var(--muted)] p-3">
+            <MetaLabel>{t("history.target")}</MetaLabel>
+            <strong className="text-sm font-normal">{languageLabel(entry.target)}</strong>
           </div>
         </div>
 
-        <div className="history-modal__section">
-          <span>{t("history.targetText")}</span>
-          <div className="history-modal__box">
-            <p>{entry.output}</p>
+        <div className="mb-3 flex flex-col gap-2">
+          <MetaLabel>{t("history.sourceText")}</MetaLabel>
+          <div className="max-h-[32vh] overflow-auto rounded-md bg-[color:var(--muted)] p-3">
+            <p className={detailTextClassName}>{entry.input}</p>
           </div>
         </div>
 
-        <div className="history-modal__actions">
+        <div className="mb-3 flex flex-col gap-2">
+          <MetaLabel>{t("history.targetText")}</MetaLabel>
+          <div className="max-h-[32vh] overflow-auto rounded-md bg-[color:var(--muted)] p-3">
+            <p className={detailTextClassName}>{entry.output}</p>
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-1">
           <Button variant="primary" onClick={onCopy}>{t("buttons.copyResult")}</Button>
         </div>
       </div>
@@ -1223,6 +1518,8 @@ function App() {
   const [imageDragActive, setImageDragActive] = useState(false);
   const [translationModelLoading, setTranslationModelLoading] = useState(false);
   const [clearingHistory, setClearingHistory] = useState(false);
+  const [themePreference, setThemePreference] = useState<AppTheme>(() => detectInitialAppTheme());
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedAppTheme>(() => readAppliedAppTheme());
 
   function applyServerStatus(code?: string, fallback?: string, isErrorFallback = false) {
     setStatusState({
@@ -1341,6 +1638,19 @@ function App() {
   useEffect(() => {
     document.title = t("app.title");
   }, [i18n.resolvedLanguage, t]);
+
+  useEffect(() => {
+    setResolvedTheme(applyAppTheme(themePreference));
+  }, [themePreference]);
+
+  useEffect(() => {
+    if (themePreference !== "system") {
+      return () => undefined;
+    }
+    return watchSystemTheme(() => {
+      setResolvedTheme(applyAppTheme("system"));
+    });
+  }, [themePreference]);
 
   function languageLabel(code: string) {
     const option = languages.find((language) => language.code === code);
@@ -1721,10 +2031,16 @@ function App() {
     modelActionAbortRef.current.abort();
   }
 
+  function handleToggleTheme() {
+    const nextTheme = resolvedTheme === "dark" ? "light" : "dark";
+    setThemePreference(nextTheme);
+    setResolvedTheme(setAppTheme(nextTheme));
+  }
+
   if (loading) {
     return (
-      <div className="app-shell">
-        <div className="loading-card">
+      <div className="app-shell min-h-screen bg-background text-foreground">
+        <div className="inline-flex items-center gap-2.5 rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)] px-3.5 py-3 text-[13px] leading-[1.45] text-[color:var(--muted-text)]">
           <LoaderCircle size={18} className="spin" />
           <span>{t("app.loading")}</span>
         </div>
@@ -1733,26 +2049,31 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
-      <header className="page-header">
+    <div className="app-shell min-h-screen bg-background text-foreground">
+      <header className="mx-auto mb-4 grid min-h-14 w-full max-w-[1200px] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 max-md:flex max-md:flex-col max-md:items-start">
         <button
           type="button"
-          className="brand-title"
+          className="min-w-0 border-0 bg-transparent p-0 text-left text-[22px] font-bold tracking-[-0.02em] text-[color:var(--text)]"
           onClick={() => setScreenMode("text")}
           aria-label={t("header.goToTextScreen")}
         >
           TranslateGemmaUI
         </button>
 
-        <div className="page-header__actions">
+        <div className="flex min-w-0 max-w-[min(100%,420px)] items-center justify-end gap-3 max-md:w-full max-md:max-w-full max-md:flex-wrap max-md:justify-start">
           <AppLocaleField value={currentLocale} onChange={(nextLocale) => void setAppLocale(nextLocale)} />
+          <ThemeToggle resolvedTheme={resolvedTheme} onToggle={handleToggleTheme} />
           <Button onClick={() => setDrawer("model")}>{t("header.model")}</Button>
         </div>
       </header>
 
-      {showStatusBanner ? <div className="status-banner">{statusMessage}</div> : null}
+      {showStatusBanner ? (
+        <div className="mx-auto mb-3 w-full max-w-[1200px] rounded-xl border border-[color:var(--danger-border)] bg-[color:var(--danger-bg)] px-3.5 py-3 text-[13px] leading-[1.45] text-[color:var(--danger-text)]">
+          {statusMessage}
+        </div>
+      ) : null}
 
-      <main className="page-main">
+      <main className="mx-auto w-full max-w-[1200px]">
         {screenMode === "text" ? (
           <TextHomeScreen
             languages={languages}

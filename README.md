@@ -1,5 +1,9 @@
 # TranslateGemmaUI
 
+<p align="center">
+  <img src="docs/branding/logo-readme.png" alt="TranslateGemmaUI logo" width="120">
+</p>
+
 TranslateGemmaUI is a local TranslateGemma app with:
 
 - a Go CLI entrypoint
@@ -101,6 +105,28 @@ To build a desktop bundle on the current platform:
 cd desktop
 bun run build
 ```
+
+For a signed and notarized macOS desktop build, use a `Developer ID Application` certificate. An `Apple Distribution` certificate is not sufficient for direct downloads outside the Mac App Store.
+
+If the certificate is already installed in your login keychain, a local signed build can use:
+
+```bash
+cd desktop
+export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Company Name (TEAMID)"
+export APPLE_API_KEY="ABC123DEFG"
+export APPLE_API_ISSUER="00000000-0000-0000-0000-000000000000"
+export APPLE_API_KEY_PATH="/absolute/path/to/AuthKey_ABC123DEFG.p8"
+bun run build
+```
+
+The GitHub release workflow will also build and upload a signed macOS desktop bundle when these repository secrets are set:
+
+- `APPLE_CERTIFICATE`
+- `APPLE_CERTIFICATE_PASSWORD`
+- `APPLE_SIGNING_IDENTITY`
+- `APPLE_API_KEY`
+- `APPLE_API_ISSUER`
+- `APPLE_API_KEY_BASE64`
 
 ### Check the version
 

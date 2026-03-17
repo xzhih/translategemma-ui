@@ -2,11 +2,13 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import i18n, { appLocaleStorageKey } from "./i18n";
+import { appThemeStorageKey } from "./theme";
 
 const originalFetch = globalThis.fetch;
 const originalCreateObjectURL = globalThis.URL.createObjectURL;
 const originalRevokeObjectURL = globalThis.URL.revokeObjectURL;
 const originalLocalStorage = Object.getOwnPropertyDescriptor(window, "localStorage");
+const originalMatchMedia = Object.getOwnPropertyDescriptor(window, "matchMedia");
 
 function createMemoryStorage() {
   const store = new Map<string, string>();
@@ -220,8 +222,22 @@ describe("TranslateGemmaUI webui", () => {
       configurable: true,
       value: createMemoryStorage(),
     });
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
     window.history.replaceState({}, "", "/");
     window.localStorage.removeItem(appLocaleStorageKey);
+    window.localStorage.removeItem(appThemeStorageKey);
     await i18n.changeLanguage("en");
     Object.defineProperty(globalThis.URL, "createObjectURL", {
       configurable: true,
@@ -330,8 +346,12 @@ describe("TranslateGemmaUI webui", () => {
   afterEach(() => {
     window.history.replaceState({}, "", "/");
     window.localStorage.removeItem(appLocaleStorageKey);
+    window.localStorage.removeItem(appThemeStorageKey);
     if (originalLocalStorage) {
       Object.defineProperty(window, "localStorage", originalLocalStorage);
+    }
+    if (originalMatchMedia) {
+      Object.defineProperty(window, "matchMedia", originalMatchMedia);
     }
     Object.defineProperty(globalThis, "fetch", {
       configurable: true,
@@ -395,6 +415,21 @@ describe("TranslateGemmaUI webui", () => {
     expect(screen.getByText("附加说明")).toBeInTheDocument();
     expect(within(sourceLanguageSelect).getByRole("option", { name: "英语-后端 (en)" })).toBeInTheDocument();
     expect(window.localStorage.getItem(appLocaleStorageKey)).toBe("zh-CN");
+  });
+
+  it("toggles the theme and persists the preference", async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Go to text screen" });
+    expect(document.documentElement.dataset.theme).toBe("light");
+
+    await user.click(screen.getByRole("button", { name: "Switch to dark mode" }));
+
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.documentElement.style.colorScheme).toBe("dark");
+    expect(window.localStorage.getItem(appThemeStorageKey)).toBe("dark");
   });
 
   it("opens the model drawer when translate is clicked without any local model", async () => {

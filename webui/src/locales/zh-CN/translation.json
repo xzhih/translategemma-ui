@@ -6,6 +6,8 @@
   "header": {
     "goToTextScreen": "切换到文本翻译页",
     "model": "模型",
+    "switchToDarkTheme": "切换到深色模式",
+    "switchToLightTheme": "切换到浅色模式",
     "switchToChinese": "将界面语言切换为中文",
     "switchToChineseShort": "中文",
     "switchToEnglish": "将界面语言切换为英文",

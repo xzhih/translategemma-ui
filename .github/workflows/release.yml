@@ -145,3 +145,116 @@ jobs:
           git add Formula/translategemma-ui.rb
           git commit -m "chore: update Homebrew formula for ${version}"
           git push origin HEAD:main
+
+  desktop-macos:
+    needs: release
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build embedded frontend assets
+        run: ./tools/sync_webui_dist.sh
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: bun install --frozen-lockfile
+
+      - name: Prepare App Store Connect API key
+        if: ${{ secrets.APPLE_API_KEY != '' && secrets.APPLE_API_ISSUER != '' && secrets.APPLE_API_KEY_BASE64 != '' }}
+        shell: bash
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          key_dir="$RUNNER_TEMP/apple-api"
+          mkdir -p "$key_dir"
+          key_path="$key_dir/AuthKey_${APPLE_API_KEY}.p8"
+          APPLE_API_KEY_BASE64="$APPLE_API_KEY_BASE64" KEY_PATH="$key_path" python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          Path(os.environ["KEY_PATH"]).write_bytes(
+              base64.b64decode(os.environ["APPLE_API_KEY_BASE64"])
+          )
+          PY
+          chmod 600 "$key_path"
+          echo "APPLE_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+
+      - name: Build desktop bundle
+        working-directory: desktop
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY_SECRET: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${APPLE_CERTIFICATE}" && -n "${APPLE_CERTIFICATE_PASSWORD}" && -n "${APPLE_SIGNING_IDENTITY_SECRET}" ]]; then
+            export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY_SECRET}"
+            echo "Building macOS desktop bundle with Developer ID signing"
+          else
+            export APPLE_SIGNING_IDENTITY="-"
+            unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_PATH || true
+            echo "Building macOS desktop bundle with ad-hoc signing (no Apple secrets configured)"
+          fi
+
+          bun run build
+
+      - name: Package .app for release upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            arm64) arch_tag="aarch64" ;;
+            x86_64) arch_tag="x64" ;;
+            *) arch_tag="$(uname -m)" ;;
+          esac
+          app_path="desktop/src-tauri/target/release/bundle/macos/TranslateGemmaUI.app"
+          zip_path="desktop/src-tauri/target/release/bundle/macos/TranslateGemmaUI_${GITHUB_REF_NAME}_macos_${arch_tag}.zip"
+          dmg_src="$(find desktop/src-tauri/target/release/bundle/dmg -maxdepth 1 -name 'TranslateGemmaUI_*.dmg' -print -quit)"
+          if [[ -z "${dmg_src}" ]]; then
+            echo "desktop dmg not found" >&2
+            exit 1
+          fi
+          dmg_path="desktop/src-tauri/target/release/bundle/dmg/TranslateGemmaUI_${GITHUB_REF_NAME}_macos_${arch_tag}.dmg"
+          ditto -c -k --sequesterRsrc --keepParent "$app_path" "$zip_path"
+          cp "$dmg_src" "$dmg_path"
+          shasum -a 256 \
+            "$zip_path" \
+            "$dmg_path" \
+            > desktop/src-tauri/target/release/bundle/desktop-macos-checksums.txt
+
+      - name: Upload desktop artifacts to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            desktop/src-tauri/target/release/bundle/macos/TranslateGemmaUI_${{ github.ref_name }}_macos_aarch64.zip
+            desktop/src-tauri/target/release/bundle/dmg/TranslateGemmaUI_${{ github.ref_name }}_macos_aarch64.dmg
+            desktop/src-tauri/target/release/bundle/desktop-macos-checksums.txt

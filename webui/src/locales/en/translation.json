@@ -6,6 +6,8 @@
   "header": {
     "goToTextScreen": "Go to text screen",
     "model": "Model",
+    "switchToDarkTheme": "Switch to dark mode",
+    "switchToLightTheme": "Switch to light mode",
     "switchToChinese": "Switch UI language to Chinese",
     "switchToChineseShort": "中文",
     "switchToEnglish": "Switch UI language to English",
