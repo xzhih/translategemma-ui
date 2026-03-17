@@ -226,37 +226,199 @@ jobs:
 
           bun run build
 
-      - name: Package .app for release upload
+      - name: Package desktop artifacts for release upload
         id: package_desktop
         shell: bash
         run: |
           set -euo pipefail
           case "$(uname -m)" in
-            arm64) arch_tag="aarch64" ;;
-            x86_64) arch_tag="x64" ;;
+            arm64) arch_tag="arm64" ;;
+            x86_64) arch_tag="amd64" ;;
             *) arch_tag="$(uname -m)" ;;
           esac
-          app_path="desktop/src-tauri/target/release/bundle/macos/TranslateGemmaUI.app"
-          zip_path="desktop/src-tauri/target/release/bundle/macos/TranslateGemmaUI_${GITHUB_REF_NAME}_macos_${arch_tag}.zip"
           dmg_src="$(find desktop/src-tauri/target/release/bundle/dmg -maxdepth 1 -name 'TranslateGemmaUI_*.dmg' -print -quit)"
           if [[ -z "${dmg_src}" ]]; then
             echo "desktop dmg not found" >&2
             exit 1
           fi
           dmg_path="desktop/src-tauri/target/release/bundle/dmg/TranslateGemmaUI_${GITHUB_REF_NAME}_macos_${arch_tag}.dmg"
-          ditto -c -k --sequesterRsrc --keepParent "$app_path" "$zip_path"
           cp "$dmg_src" "$dmg_path"
           shasum -a 256 \
-            "$zip_path" \
             "$dmg_path" \
             > desktop/src-tauri/target/release/bundle/desktop-macos-checksums.txt
-          echo "zip_path=$zip_path" >> "$GITHUB_OUTPUT"
           echo "dmg_path=$dmg_path" >> "$GITHUB_OUTPUT"
 
       - name: Upload desktop artifacts to GitHub release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            ${{ steps.package_desktop.outputs.zip_path }}
             ${{ steps.package_desktop.outputs.dmg_path }}
             desktop/src-tauri/target/release/bundle/desktop-macos-checksums.txt
+
+  desktop-linux:
+    needs: release
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Linux desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libssl-dev \
+            libxdo-dev \
+            librsvg2-dev \
+            libwebkit2gtk-4.1-dev \
+            patchelf \
+            wget
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build embedded frontend assets
+        run: ./tools/sync_webui_dist.sh
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: bun install --frozen-lockfile
+
+      - name: Build desktop bundle
+        working-directory: desktop
+        run: bun run build
+
+      - name: Package desktop artifacts for release upload
+        id: package_desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            aarch64|arm64) arch_tag="arm64" ;;
+            x86_64) arch_tag="amd64" ;;
+            *) arch_tag="$(uname -m)" ;;
+          esac
+          assets_dir="desktop/src-tauri/target/release/bundle/release-assets"
+          mkdir -p "$assets_dir"
+
+          appimage_src="$(find desktop/src-tauri/target/release/bundle/appimage -maxdepth 1 -name '*.AppImage' -print -quit)"
+          deb_src="$(find desktop/src-tauri/target/release/bundle/deb -name '*.deb' -print -quit)"
+
+          if [[ -z "${appimage_src}" || -z "${deb_src}" ]]; then
+            echo "expected Linux desktop artifacts not found" >&2
+            exit 1
+          fi
+
+          appimage_path="${assets_dir}/TranslateGemmaUI_${GITHUB_REF_NAME}_linux_${arch_tag}.AppImage"
+          deb_path="${assets_dir}/TranslateGemmaUI_${GITHUB_REF_NAME}_linux_${arch_tag}.deb"
+          cp "$appimage_src" "$appimage_path"
+          cp "$deb_src" "$deb_path"
+          shasum -a 256 \
+            "$appimage_path" \
+            "$deb_path" \
+            > "${assets_dir}/desktop-linux-checksums.txt"
+
+      - name: Upload desktop artifacts to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            desktop/src-tauri/target/release/bundle/release-assets/TranslateGemmaUI_${{ github.ref_name }}_linux_*.AppImage
+            desktop/src-tauri/target/release/bundle/release-assets/TranslateGemmaUI_${{ github.ref_name }}_linux_*.deb
+            desktop/src-tauri/target/release/bundle/release-assets/desktop-linux-checksums.txt
+
+  desktop-windows:
+    needs: release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build embedded frontend assets
+        shell: bash
+        run: ./tools/sync_webui_dist.sh
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        shell: bash
+        run: bun install --frozen-lockfile
+
+      - name: Build desktop bundle
+        working-directory: desktop
+        shell: bash
+        run: bun run build
+
+      - name: Package desktop artifacts for release upload
+        shell: pwsh
+        run: |
+          $assetsDir = "desktop/src-tauri/target/release/bundle/release-assets"
+          New-Item -ItemType Directory -Force -Path $assetsDir | Out-Null
+
+          $archTag = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "amd64" }
+
+          $msiSource = Get-ChildItem "desktop/src-tauri/target/release/bundle/msi" -Filter *.msi -Recurse | Select-Object -First 1
+          $exeSource = Get-ChildItem "desktop/src-tauri/target/release/bundle/nsis" -Filter *.exe -Recurse | Select-Object -First 1
+
+          if (-not $msiSource -or -not $exeSource) {
+            throw "expected Windows desktop artifacts not found"
+          }
+
+          $msiPath = Join-Path $assetsDir "TranslateGemmaUI_${env:GITHUB_REF_NAME}_windows_${archTag}.msi"
+          $exePath = Join-Path $assetsDir "TranslateGemmaUI_${env:GITHUB_REF_NAME}_windows_${archTag}.exe"
+          Copy-Item $msiSource.FullName $msiPath -Force
+          Copy-Item $exeSource.FullName $exePath -Force
+
+          $hashLines = @()
+          foreach ($path in @($msiPath, $exePath)) {
+            $hash = (Get-FileHash -Algorithm SHA256 $path).Hash.ToLowerInvariant()
+            $name = Split-Path $path -Leaf
+            $hashLines += "$hash  $name"
+          }
+          Set-Content -Path (Join-Path $assetsDir "desktop-windows-checksums.txt") -Value $hashLines
+
+      - name: Upload desktop artifacts to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            desktop/src-tauri/target/release/bundle/release-assets/TranslateGemmaUI_${{ github.ref_name }}_windows_*.msi
+            desktop/src-tauri/target/release/bundle/release-assets/TranslateGemmaUI_${{ github.ref_name }}_windows_*.exe
+            desktop/src-tauri/target/release/bundle/release-assets/desktop-windows-checksums.txt
