@@ -1,0 +1,26 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-capability",
+  "description": "Default capability for the TranslateGemmaUI desktop shell",
+  "windows": ["splash", "main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-kill",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "binaries/translategemma-ui",
+          "sidecar": true,
+          "args": [
+            "--webui",
+            "--listen",
+            {
+              "validator": "127\\.0\\.0\\.1:\\d{2,5}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

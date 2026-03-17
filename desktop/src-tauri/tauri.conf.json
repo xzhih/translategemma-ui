@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "TranslateGemmaUI",
+  "version": "0.1.0",
+  "identifier": "com.xzhih.translategemma.desktop",
+  "build": {
+    "beforeDevCommand": {
+      "cwd": "..",
+      "script": "bun run build:sidecar",
+      "wait": true
+    },
+    "beforeBuildCommand": {
+      "cwd": "..",
+      "script": "bun run build:sidecar",
+      "wait": true
+    },
+    "frontendDist": "../src"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "security": {
+      "csp": null
+    },
+    "windows": []
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Productivity",
+    "shortDescription": "Local TranslateGemma desktop app",
+    "longDescription": "A Tauri desktop shell that starts the existing TranslateGemmaUI Go web server locally and opens it in a native desktop window.",
+    "externalBin": [
+      "binaries/translategemma-ui"
+    ]
+  }
+}

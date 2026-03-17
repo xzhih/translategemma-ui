@@ -1,15 +1,11 @@
 import {
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   type ChangeEvent,
   type DragEvent,
-  type PointerEvent as ReactPointerEvent,
   type ButtonHTMLAttributes,
   type ReactNode,
-  type RefObject,
-  type TextareaHTMLAttributes,
 } from "react";
 import {
   ArrowLeftRight,
@@ -490,69 +486,32 @@ function ScrollView({
   );
 }
 
-function useAutoGrowTextarea(ref: RefObject<HTMLTextAreaElement | null>, value: string) {
-  useLayoutEffect(() => {
-    const node = ref.current;
-    if (!node) {
-      return;
-    }
-
-    const resize = () => {
-      const manualHeight = Number(node.dataset.manualHeight || "0");
-      node.style.height = "0px";
-      const parent = node.parentElement;
-      const parentHeight = parent ? parent.clientHeight : 0;
-      node.style.height = `${Math.max(node.scrollHeight, manualHeight, parentHeight)}px`;
-    };
-
-    resize();
-    window.addEventListener("resize", resize);
-    return () => {
-      window.removeEventListener("resize", resize);
-    };
-  }, [ref, value]);
-}
-
-function rememberManualTextareaHeight(event: ReactPointerEvent<HTMLTextAreaElement>) {
-  event.currentTarget.dataset.manualHeight = String(event.currentTarget.offsetHeight);
-}
-
-function AutoGrowTextarea({
-  value,
-  ...props
-}: TextareaHTMLAttributes<HTMLTextAreaElement> & {
-  value: string;
-}) {
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  useAutoGrowTextarea(textareaRef, value);
-  return <textarea ref={textareaRef} value={value} {...props} />;
-}
-
 function InstructionField({
   ariaLabel,
+  className,
   placeholder,
   value,
   onChange,
 }: {
   ariaLabel: string;
+  className?: string;
   placeholder: string;
   value: string;
   onChange: (next: string) => void;
 }) {
   const { t } = useTranslation();
   return (
-    <label className="instruction-card">
+    <label className={`instruction-card ${className ?? ""}`.trim()}>
       <div className="instruction-card__copy">
         <span className="instruction-card__label">{t("instruction.label")}</span>
         <span className="instruction-card__hint">{t("instruction.hint")}</span>
       </div>
-      <AutoGrowTextarea
+      <textarea
         aria-label={ariaLabel}
         className="instruction-textarea"
         placeholder={placeholder}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        onPointerUp={rememberManualTextareaHeight}
       />
     </label>
   );
@@ -639,28 +598,27 @@ function TextHomeScreen({
         rightAction={<Button onClick={onCopyOutput}>{t("buttons.copy")}</Button>}
       />
 
-      <div className="editor-grid">
-        <div className="editor-panel">
-          <AutoGrowTextarea
+      <div className="editor-grid editor-grid--text">
+        <div className="editor-panel editor-panel--source">
+          <textarea
             aria-label={t("textScreen.sourceTextAria")}
             className="editor-textarea"
             placeholder={t("textScreen.sourceTextPlaceholder")}
             value={textInput}
             onChange={(event) => onTextInputChange(event.target.value)}
-            onPointerUp={rememberManualTextareaHeight}
           />
         </div>
         <div className={`editor-panel editor-panel--output ${textOutput ? "" : "editor-panel--placeholder"}`.trim()}>
           <p>{textOutput || t("textScreen.resultPlaceholder")}</p>
         </div>
+        <InstructionField
+          className="instruction-card--inline"
+          ariaLabel={t("textScreen.instructionAria")}
+          placeholder={t("instruction.textPlaceholder")}
+          value={instruction}
+          onChange={onInstructionChange}
+        />
       </div>
-
-      <InstructionField
-        ariaLabel={t("textScreen.instructionAria")}
-        placeholder={t("instruction.textPlaceholder")}
-        value={instruction}
-        onChange={onInstructionChange}
-      />
     </section>
   );
 }
@@ -775,9 +733,9 @@ function ImageScreen({
         rightAction={<Button onClick={onCopy}>{t("buttons.copy")}</Button>}
       />
 
-      <div className="editor-grid">
+      <div className="editor-grid editor-grid--image">
         <div
-          className={`upload-panel ${visionEnabled ? "upload-panel--dropzone" : ""} ${uploadedPreviewUrl ? "upload-panel--filled" : "upload-panel--empty"} ${dragActive ? "upload-panel--drag-active" : ""}`.trim()}
+          className={`upload-panel upload-panel--image ${visionEnabled ? "upload-panel--dropzone" : ""} ${uploadedPreviewUrl ? "upload-panel--filled" : "upload-panel--empty"} ${dragActive ? "upload-panel--drag-active" : ""}`.trim()}
           role="region"
           aria-label={t("imageScreen.uploadAreaAria")}
           onDragEnter={visionEnabled ? onDragEnter : undefined}
@@ -846,14 +804,14 @@ function ImageScreen({
         <div className={`editor-panel editor-panel--output ${imageOutput ? "" : "editor-panel--placeholder"}`.trim()}>
           {imageOutput ? <p>{imageOutput}</p> : <p>{t("textScreen.resultPlaceholder")}</p>}
         </div>
+        <InstructionField
+          className="instruction-card--inline"
+          ariaLabel={t("imageScreen.instructionAria")}
+          placeholder={t("instruction.imagePlaceholder")}
+          value={instruction}
+          onChange={onInstructionChange}
+        />
       </div>
-
-      <InstructionField
-        ariaLabel={t("imageScreen.instructionAria")}
-        placeholder={t("instruction.imagePlaceholder")}
-        value={instruction}
-        onChange={onInstructionChange}
-      />
     </section>
   );
 }
@@ -991,7 +949,7 @@ function ModelDrawer({
                     </Button>
                     <Button
                       variant="danger"
-                      className="button--full"
+                      className="model-item__delete"
                       onClick={() => onDelete(model.id)}
                       disabled={busy}
                     >
@@ -1423,6 +1381,20 @@ function App() {
     return models.find((item) => item.id === resolvedModelId) ?? null;
   }
 
+  function shouldTrackDownload(url: string, modelId?: string) {
+    const model = findModelForAction(url, modelId);
+    if (!model) {
+      return false;
+    }
+    if (url === "/api/models/install") {
+      return true;
+    }
+    if (url === "/api/models/enable-vision") {
+      return !model.installed;
+    }
+    return false;
+  }
+
   function startDownloadTracking(url: string, modelId?: string) {
     const model = findModelForAction(url, modelId);
     if (!model) {
@@ -1619,9 +1591,12 @@ function App() {
     if (busyModelId) {
       return;
     }
-    const isDownloadAction = url === "/api/models/install" || url === "/api/models/enable-vision";
-    const abortController = isDownloadAction ? new AbortController() : null;
+    const tracksDownload = shouldTrackDownload(url, modelId);
+    const abortController = tracksDownload ? new AbortController() : null;
     modelActionAbortRef.current = abortController;
+    if (url === "/api/models/enable-vision" && tracksDownload) {
+      setDrawer("model");
+    }
     if (url === "/api/models/activate" && modelId) {
       setModels((current) =>
         current.map((item) => ({
@@ -1643,7 +1618,7 @@ function App() {
         })),
       );
     }
-    if (isDownloadAction) {
+    if (tracksDownload) {
       startDownloadTracking(url, modelId);
     }
     setBusyModelId(modelId || "__global__");
@@ -1656,7 +1631,7 @@ function App() {
           if (event.type === "error") {
             throw new StreamEventError(event.message || t("errors.modelActionFailed"), event.messageCode);
           }
-          if (isDownloadAction) {
+          if (tracksDownload) {
             updateDownloadTracking(url, modelId, event);
           }
           if (event.type === "done") {
@@ -1776,11 +1751,6 @@ function App() {
       </header>
 
       {showStatusBanner ? <div className="status-banner">{statusMessage}</div> : null}
-      {downloadState && drawer !== "model" ? (
-        <div className="download-banner">
-          <DownloadProgressCard download={downloadState} onCancel={handleCancelDownload} />
-        </div>
-      ) : null}
 
       <main className="page-main">
         {screenMode === "text" ? (

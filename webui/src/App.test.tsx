@@ -524,16 +524,15 @@ describe("TranslateGemmaUI webui", () => {
     expect(await screen.findByText("未找到历史记录")).toBeInTheDocument();
   });
 
-  it("auto grows the source textarea to fit long content", async () => {
+  it("keeps the source textarea height controlled for long content", async () => {
     const user = userEvent.setup();
-    vi.spyOn(HTMLTextAreaElement.prototype, "scrollHeight", "get").mockReturnValue(320);
 
     render(<App />);
 
     const input = (await screen.findByLabelText("Source text")) as HTMLTextAreaElement;
     await user.type(input, "A longer block of text that should grow the editor.");
 
-    expect(input.style.height).toBe("320px");
+    expect(input.style.height).toBe("");
   });
 
   it("opens history and shows detail", async () => {
@@ -575,6 +574,8 @@ describe("TranslateGemmaUI webui", () => {
     await user.click(screen.getByRole("button", { name: "Switch to q8_0_vision" }));
 
     expect(await screen.findByRole("button", { name: "Upload image" })).toBeInTheDocument();
+    expect(document.querySelector(".editor-grid--image .upload-panel--image")).not.toBeNull();
+    expect(document.querySelector(".editor-grid--image .instruction-card--inline")).not.toBeNull();
     expect(screen.getByText("Result...")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("For example: Keep brand names unchanged and preserve line breaks.")).toBeInTheDocument();
     expect(screen.queryByText("Vision runtime enabled")).not.toBeInTheDocument();
@@ -587,6 +588,110 @@ describe("TranslateGemmaUI webui", () => {
 
     expect(await screen.findByText("安静区")).toBeInTheDocument();
     expect(screen.queryByText("File translation completed")).not.toBeInTheDocument();
+  });
+
+  it("keeps vision switching inline when the vision runtime is already installed", async () => {
+    const user = userEvent.setup();
+    const baseFetch = globalThis.fetch as typeof fetch;
+    let resolveEnableVision: (() => void) | undefined;
+
+    Object.defineProperty(globalThis, "fetch", {
+      configurable: true,
+      value: vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        const method = init?.method ?? "GET";
+        if (url === "/api/models/enable-vision" && method === "POST") {
+          return new Promise<Response>((resolve) => {
+            resolveEnableVision = () => {
+              bootstrapState.status = "Vision runtime active";
+              bootstrapState.statusCode = "vision_runtime_active";
+              bootstrapState.visionEnabled = true;
+              bootstrapState.activeModelId = "q8_0_vision";
+              bootstrapState.models = bootstrapState.models.map((item) => ({
+                ...item,
+                active: item.id === "q8_0_vision",
+                selected: item.id === "q8_0_vision",
+                loaded: item.id === "q8_0_vision",
+              }));
+              void streamResponse([
+                { type: "progress", stage: "load", message: "Loading model into runtime", percent: 55 },
+                { type: "done", message: "Vision runtime active", messageCode: "vision_runtime_active" },
+              ]).then(resolve);
+            };
+          });
+        }
+        return baseFetch(input, init);
+      }),
+    });
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Image" });
+    await user.click(screen.getByRole("button", { name: "Image" }));
+    await user.click(screen.getByRole("button", { name: "Switch to q8_0_vision" }));
+
+    expect(screen.queryByRole("dialog", { name: "Model List" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Model download progress" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Loading model" })).toBeDisabled();
+
+    resolveEnableVision?.();
+
+    expect(await screen.findByRole("button", { name: "Upload image" })).toBeInTheDocument();
+  });
+
+  it("opens the model drawer and shows download progress when the vision runtime is not installed", async () => {
+    const user = userEvent.setup();
+    const baseFetch = globalThis.fetch as typeof fetch;
+
+    bootstrapState.models = bootstrapState.models.map((item) =>
+      item.id === "q8_0_vision"
+        ? { ...item, installed: false, active: false, selected: false, loaded: false }
+        : item,
+    );
+
+    Object.defineProperty(globalThis, "fetch", {
+      configurable: true,
+      value: vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        const method = init?.method ?? "GET";
+        if (url === "/api/models/enable-vision" && method === "POST") {
+          return timedStreamingDownloadResponse(init?.signal ?? undefined, [
+            {
+              event: {
+                type: "status",
+                stage: "check",
+                message: "Preparing model install",
+                messageCode: "preparing_model_install",
+                percent: 0,
+              },
+            },
+            {
+              event: {
+                type: "progress",
+                stage: "download",
+                message: "Downloading artifact",
+                percent: 37.5,
+                downloadedBytes: 805306368,
+                totalBytes: 2147483648,
+                speedBytesPerSecond: 67108864,
+              },
+              delayMs: 40,
+            },
+          ]);
+        }
+        return baseFetch(input, init);
+      }),
+    });
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Image" });
+    await user.click(screen.getByRole("button", { name: "Image" }));
+    await user.click(screen.getByRole("button", { name: "Switch to q8_0_vision" }));
+
+    expect(await screen.findByRole("dialog", { name: "Model List" })).toBeInTheDocument();
+    expect(await screen.findByText("Preparing model install")).toBeInTheDocument();
+    expect(await screen.findByText("768 MB / 2.00 GB")).toBeInTheDocument();
   });
 
   it("shows download progress, speed, and allows canceling a model download", async () => {

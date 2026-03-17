@@ -83,6 +83,25 @@ translategemma-ui --webui --listen 0.0.0.0:8090
 translategemma-ui --tui
 ```
 
+### Run the Desktop App
+
+The repository now includes a Tauri desktop shell under `desktop/`. It starts the existing Go Web UI as a bundled sidecar and opens it in a native desktop window, so end users do not need to launch a browser manually.
+
+For local development:
+
+```bash
+cd desktop
+bun install
+bun run dev
+```
+
+To build a desktop bundle on the current platform:
+
+```bash
+cd desktop
+bun run build
+```
+
 ### Check the version
 
 ```bash
@@ -224,6 +243,7 @@ Development requirements:
 
 - Go 1.25+
 - Bun 1.2+
+- Rust 1.77.2+ for the Tauri desktop shell
 
 Install frontend dependencies:
 
@@ -232,10 +252,24 @@ cd webui
 bun install
 ```
 
+Install desktop shell dependencies:
+
+```bash
+cd desktop
+bun install
+```
+
 Run backend tests:
 
 ```bash
 go test ./...
+```
+
+Build the desktop sidecar without starting the desktop shell:
+
+```bash
+cd desktop
+bun run build:sidecar
 ```
 
 Run frontend tests:

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TranslateGemmaUI</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script>
+      window.__desktopState = {
+        stage: "Preparing desktop shell",
+        detail: "Starting local translation service...",
+        error: false,
+      };
+
+      window.applyDesktopState = function () {
+        const stage = document.getElementById("stage");
+        const detail = document.getElementById("detail");
+        const card = document.getElementById("card");
+        if (!stage || !detail || !card) {
+          return;
+        }
+
+        stage.textContent = window.__desktopState.stage;
+        detail.textContent = window.__desktopState.detail;
+        card.dataset.error = window.__desktopState.error ? "true" : "false";
+      };
+
+      window.desktopStatus = function (stage, detail) {
+        window.__desktopState = {
+          stage,
+          detail,
+          error: false,
+        };
+        window.applyDesktopState();
+      };
+
+      window.desktopError = function (detail) {
+        window.__desktopState = {
+          stage: "Unable to start TranslateGemmaUI",
+          detail,
+          error: true,
+        };
+        window.applyDesktopState();
+      };
+
+      window.addEventListener("DOMContentLoaded", window.applyDesktopState);
+    </script>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="card" id="card" data-error="false">
+        <div class="brand">TranslateGemmaUI</div>
+        <div class="spinner" aria-hidden="true"></div>
+        <div class="status-copy" aria-live="polite" aria-atomic="true">
+          <h1 id="stage">Preparing desktop shell</h1>
+          <p id="detail">Starting local translation service...</p>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

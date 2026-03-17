@@ -21,6 +21,8 @@ import (
 	"translategemma-ui/internal/translate"
 )
 
+const desktopShutdownTokenEnv = "TRANSLATEGEMMA_UI_DESKTOP_TOKEN"
+
 func newServer(modelID, dataRoot string) (*Server, error) {
 	uiShell, err := loadIndexHTML()
 	if err != nil {
@@ -50,6 +52,7 @@ func newServer(modelID, dataRoot string) (*Server, error) {
 		runtimeManager:  runtimeManager,
 		backendURL:      backendURL,
 		dataRoot:        dataRoot,
+		shutdownToken:   strings.TrimSpace(os.Getenv(desktopShutdownTokenEnv)),
 		availableModels: modelsList,
 		activeModel:     active,
 		languages:       supportedLanguages(),
@@ -120,6 +123,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/translate", s.handleTranslateAPI)
 	mux.HandleFunc("/api/translate/stream", s.handleTranslateStream)
 	mux.HandleFunc("/api/translate/image", s.handleImageTranslate)
+	mux.HandleFunc("/api/desktop/shutdown", s.handleDesktopShutdown)
 	mux.HandleFunc("/api/models/install", s.handleModelInstall)
 	mux.HandleFunc("/api/models/activate", s.handleModelActivate)
 	mux.HandleFunc("/api/models/delete", s.handleModelDelete)
@@ -163,7 +167,10 @@ func Run(listen, modelID, dataRoot string) error {
 		Addr:    listen,
 		Handler: s.routes(),
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	baseCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.requestStop = cancel
+	ctx, stop := signal.NotifyContext(baseCtx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	return runHTTPServer(ctx, server, s.runtimeManager, server.ListenAndServe)
 }

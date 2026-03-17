@@ -51,6 +51,7 @@ type Server struct {
 	runtimeManager runtimeController
 	backendURL     string
 	dataRoot       string
+	shutdownToken  string
 
 	availableModels []models.QuantizedModel
 	activeModel     models.QuantizedModel
@@ -58,6 +59,7 @@ type Server struct {
 
 	probeBackend func(string) runtime.Status
 	now          func() time.Time
+	requestStop  func()
 
 	cfg   config.AppConfig
 	state config.AppState
